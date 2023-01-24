@@ -41,14 +41,15 @@ def sample_images(frame_nums):
             var = np.random.uniform(var_d,var_u)
             img = open_frame(np.random.choice(frame_nums),var,CROP)
             a =  augment(img,crop = CROP)
-            yield [var,a]
+            yield np.concatenate((var*np.ones((1,)+img[0].shape),a))
             
 def get_data_generator(sampler):
     def get_data():
         while True:
             yx = next(sampler)
-            x,y = yx[1][1],yx[1][0]
-            yield np.expand_dims(x,axis=-1),np.expand_dims(y,axis=-1),np.expand_dims(yx[0],axis=-1)
+            x,y = np.array([yx[0],yx[2]]),yx[1]
+            x = np.expand_dims(x,axis=-1)
+            yield {'input_emb':np.array([np.mean(x[0])]),'input':x[1]},np.expand_dims(y,axis=-1)
         
     return get_data
     
@@ -74,13 +75,13 @@ def get_generators(typ,var1_d,var1_u,BATCH_SIZE = 50, CROP1 = 256):
 
     dg_train = tf.data.Dataset.from_generator(
         get_data_generator(sample_images(train)),
-        output_types=(tf.float32, tf.float32,tf.float32),
-        output_shapes=((CROP, CROP, 1),(CROP, CROP, 1),(1,)) )
+        output_types=({'input_emb':tf.float32,'input':tf.float32}, tf.float32),
+        output_shapes=({'input_emb':(1),'input':(CROP, CROP, 1)},(CROP, CROP, 1)) )
 
     dg_val = tf.data.Dataset.from_generator(
         get_data_generator(sample_images(test)),
-        output_types=(tf.float32, tf.float32,tf.float32),
-        output_shapes=((CROP, CROP, 1),(CROP, CROP, 1),(1,)) )
+        output_types=({'input_emb':tf.float32,'input':tf.float32}, tf.float32),
+        output_shapes=({'input_emb':(1),'input':(CROP, CROP, 1)},(CROP, CROP, 1)) )
 
     gen_batch_train = dg_train.batch(BATCH_SIZE)
     gen_batch_val = dg_val.batch(BATCH_SIZE)

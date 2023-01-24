@@ -1,0 +1,2 @@
+model_checkpoint_path: "simplesplines_gaussian_50"
+all_model_checkpoint_paths: "simplesplines_gaussian_50"
