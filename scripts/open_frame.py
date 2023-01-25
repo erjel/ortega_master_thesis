@@ -27,7 +27,9 @@ def gaussian2(frame_num,var=1,CROP = 256):
     gauss = gauss.reshape(img.shape[0],img.shape[1])
     img_gauss = np.clip(np.copy(img) + gauss,0,255)
     
-    gauss2 = np.random.normal(0,(var/100)**2,img.shape)
+    input_channel = np.copy(img)/np.amax(img)
+    
+    gauss2 = np.random.normal(0,(var/50)**2,img.shape)
     gauss2 = gauss.reshape(img.shape[0],img.shape[1])
     
     img_gauss2 = np.clip(np.copy(img_gauss) + gauss2, 0, 255)
@@ -39,7 +41,7 @@ def gaussian2(frame_num,var=1,CROP = 256):
     
     
     
-    return np.array([img_gauss,img_gauss2])
+    return np.array([img_gauss,img_gauss2,input_channel])
 
 def poisson(frame_num,var=1,CROP = 256):
     input_path = frame_num
