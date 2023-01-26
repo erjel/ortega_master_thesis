@@ -55,12 +55,13 @@ def get_data_generator(sampler):
     def get_data():
         while True:
             yx = next(sampler)
-            try:
+            #try:
+            if len(yx) == 4:
                 x,y,z = np.array([yx[0],yx[2]]),yx[1],yx[3]
                 x = np.expand_dims(x,axis=-1)
                 z = np.expand_dims(z,axis=-1)
                 yield {'input_emb':np.array([np.mean(x[0])]),'input':x[1],'output':z},np.expand_dims(y,axis=-1)
-            except:
+            else:
                 x,y = np.array([yx[0],yx[2]]),yx[1]
                 x = np.expand_dims(x,axis=-1)
                 yield {'input_emb':np.array([np.mean(x[0])]),'input':x[1]},np.expand_dims(y,axis=-1)

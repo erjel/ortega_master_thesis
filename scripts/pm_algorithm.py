@@ -1,5 +1,6 @@
 import numpy as np
 import cv2
+import tensorflow as tf
 
 def anisodiff(img,niter=1,lambd=50,gamma=0.1,step=(1.,1.),sigma=0, option=1,ploton=False):
 
@@ -68,7 +69,7 @@ def anisodiff(img,niter=1,lambd=50,gamma=0.1,step=(1.,1.),sigma=0, option=1,plot
     
     if option == 1:
         def f(lamb,b):
-            return np.exp(-1* (np.power(lamb,2))/(np.power(b,2)))
+            return tf.math.exp(-1* (np.power(lamb,2))/(np.power(b,2)))
         
     if option == 2:
         def f(lamb,b):
