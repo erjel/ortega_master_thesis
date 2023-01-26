@@ -251,7 +251,7 @@ def splines(input_shape, it_lim = 1,num_classes=10,order1 = 1,CROP=256):
     emb = tf.keras.layers.Reshape((num_classes,order+1),name='embedding')(emb)
     x = classifier(inputs, num_classes=num_classes,CROP=CROP)
 
-    y = tf.keras.layers.Flatten()(x)
+    y = tf.keras.layers.Flatten(name='y')(x)
 
     partition_low = tf.constant(np.power(np.linspace(0,1,num_classes+1),2)[:-1])
     partition_low = tf.expand_dims(tf.expand_dims(tf.expand_dims(partition_low,0),0),0)
@@ -274,7 +274,7 @@ def splines(input_shape, it_lim = 1,num_classes=10,order1 = 1,CROP=256):
         dz_n = tf.keras.layers.Lambda(lambda z: tf.math.abs(z)/tf.reduce_max(tf.math.abs(z)))(dz)
         dw_n = tf.keras.layers.Lambda(lambda z: tf.math.abs(z)/tf.reduce_max(tf.math.abs(z)))(dw)
 
-        dx2 = tf.keras.layers.Lambda(lambda z:tf.math.pow(z,2))(dx_n)
+        dx2 = tf.keras.layers.Lambda(lambda z:tf.math.pow(z,2),name=f'dx_{num_it}')(dx_n)
         dy2 = tf.keras.layers.Lambda(lambda z:tf.math.pow(z,2))(dy_n)
         dz2 = tf.keras.layers.Lambda(lambda z:tf.math.pow(z,2))(dz_n)
         dw2 = tf.keras.layers.Lambda(lambda z:tf.math.pow(z,2))(dw_n)
