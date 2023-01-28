@@ -166,81 +166,6 @@ def lambdas(input_shape,it_lim = 1, option=1, num_classes=2,kernel_size=3,pool_s
     
     return tf.keras.models.Model(inputs, outputs)
 
-def border_lambdas(input_shape,border_classifier,it_lim = 1, option=1, num_classes=2,kernel_size=3,pool_size=3,CROP=256):
-    inputs = tf.keras.Input(shape=input_shape)
-    x = classifier(inputs, option=option, num_classes=num_classes,kernel_size=kernel_size,
-                   pool_size=pool_size,CROP=CROP)
-
-    x = tf.keras.layers.Dropout(0.5)(x)
-    lambda_value_1 = tf.keras.layers.Dense(1, activation='linear', name=f'lambdas_1',kernel_initializer=tf.keras.initializers.RandomNormal(
-    mean=0.0, stddev=1, seed=None),bias_initializer = tf.keras.initializers.RandomNormal(
-    mean=0.0, stddev=1, seed=None))(x)
-    lambda_value_2 = tf.keras.layers.Dense(1, activation='linear', name=f'lambdas_2',kernel_initializer=tf.keras.initializers.RandomNormal(
-    mean=0.0, stddev=1, seed=None),bias_initializer = tf.keras.initializers.RandomNormal(
-    mean=0.0, stddev=1, seed=None))(x)
-    lambda_value_1 = tf.keras.layers.Lambda(lambda z: tf.math.pow(z,-2))(lambda_value_1)
-    lambda_value_2 = tf.keras.layers.Lambda(lambda z: tf.math.pow(z,-2))(lambda_value_2)
-
-
-    lam_1 = tf.expand_dims(lambda_value_1,axis=-1)
-    lam_1 = tf.expand_dims(lam_1,axis=-1)
-    lam_2 = tf.expand_dims(lambda_value_2,axis=-1)
-    lam_2 = tf.expand_dims(lam_2,axis=-1)
-
-    class_1 = tf.cast(border_classifier(inputs)>0.5,'float32')
-    class_2 = tf.cast(border_classifier(inputs)<=0.5,'float32')
-    class_1 = tf.keras.layers.multiply([lam_1,class_1])
-    class_2 = tf.keras.layers.multiply([lam_2,class_2])
-
-    lambda_value = tf.keras.layers.add([class_1,class_2],name='lambda_val')
-
-    outputs = inputs
-
-
-    for num_it in range(it_lim):
-
-        dx = tf.keras.layers.Lambda(lambda z: z[:,:-2,1:-1] - z[:,1:-1,1:-1])(outputs)
-        dy = tf.keras.layers.Lambda(lambda z: z[:,2:,1:-1] - z[:,1:-1,1:-1])(outputs)
-        dz = tf.keras.layers.Lambda(lambda z: z[:,1:-1,2:] - z[:,1:-1,1:-1])(outputs)
-        dw = tf.keras.layers.Lambda(lambda z: z[:,1:-1,:-2] - z[:,1:-1,1:-1])(outputs)
-
-        dx2 = tf.keras.layers.Lambda(lambda z:tf.math.pow(z,2))(dx)
-        dy2 = tf.keras.layers.Lambda(lambda z:tf.math.pow(z,2))(dy)
-        dz2 = tf.keras.layers.Lambda(lambda z:tf.math.pow(z,2))(dz)
-        dw2 = tf.keras.layers.Lambda(lambda z:tf.math.pow(z,2))(dw)
-
-        norm = tf.keras.layers.add([dx2,dy2,dz2,dw2])
-        dx2 = tf.keras.layers.multiply([lambda_value[:,1:-1,1:-1],dx2])
-        dy2 = tf.keras.layers.multiply([lambda_value[:,1:-1,1:-1],dy2])
-        dz2 = tf.keras.layers.multiply([lambda_value[:,1:-1,1:-1],dz2])
-        dw2 = tf.keras.layers.multiply([lambda_value[:,1:-1,1:-1],dw2])
-
-        if option == 1:
-            coeff_x = tf.keras.layers.Lambda(lambda z: tf.math.exp(-z),name=f'coeffx_{num_it}')(dx2)
-            coeff_y = tf.keras.layers.Lambda(lambda z: tf.math.exp(-z),name=f'coeffy_{num_it}')(dy2)
-            coeff_z = tf.keras.layers.Lambda(lambda z: tf.math.exp(-z),name=f'coeffz_{num_it}')(dz2)
-            coeff_w = tf.keras.layers.Lambda(lambda z: tf.math.exp(-z),name=f'coeffw_{num_it}')(dw2)
-        elif option == 2:
-            coeff_x = tf.keras.layers.Lambda(lambda z: 1./(1. + z),name=f'coeffx_{num_it}')(dx2)
-            coeff_y = tf.keras.layers.Lambda(lambda z: 1./(1. + z),name=f'coeffy_{num_it}')(dy2)
-            coeff_z = tf.keras.layers.Lambda(lambda z: 1./(1. + z),name=f'coeffz_{num_it}')(dz2)
-            coeff_w = tf.keras.layers.Lambda(lambda z: 1./(1. + z),name=f'coeffw_{num_it}')(dw2)
-
-
-
-        outputs_x = tf.keras.layers.multiply([coeff_x,dx])
-        outputs_y = tf.keras.layers.multiply([coeff_y,dy])
-        outputs_z = tf.keras.layers.multiply([coeff_z,dz])
-        outputs_w = tf.keras.layers.multiply([coeff_w,dw])
-
-        outputs_it = tf.keras.layers.add([outputs_x,outputs_y,outputs_z,outputs_w])
-        zeros_y = tf.expand_dims(tf.zeros_like(outputs_it)[:,1],axis=-1)
-        zeros_x = tf.expand_dims(tf.zeros_like(outputs)[:,1],axis=-3)
-        pad_y = tf.keras.layers.Concatenate(axis=-2)([zeros_y,outputs_it,zeros_y])
-        outputs_it = tf.keras.layers.Concatenate(axis=1)([zeros_x,pad_y,zeros_x])
-        outputs = tf.keras.layers.add([0.1*outputs_it,outputs])
-    
-    return tf.keras.models.Model(inputs, outputs)
     
 def splines(input_shape, it_lim = 1,num_classes=10,order1 = 1,CROP=256):
     order = order1
@@ -718,20 +643,28 @@ def decreasing_taylor(input_shape, it_lim = 1,num_classes=10,CROP=256):
     cte = tf.keras.layers.Dense(1,activation = 'relu')(y1)
     cte_emb = tf.keras.layers.Dense(1,activation = 'relu')(emb)
     cte = tf.keras.layers.add([cte,cte_emb])
-    cte = tf.keras.layers.Lambda(lambda z: tf.math.pow(z,2),name='cte')(cte)
+    cte = tf.keras.layers.Lambda(lambda z: tf.math.pow(z,2))(cte)
 
     linear = tf.keras.layers.Dense(1,activation = 'relu')(y1)
     linear_emb = tf.keras.layers.Dense(1,activation = 'relu')(emb)
     linear = tf.keras.layers.add([linear,linear_emb])
     quad = tf.keras.layers.Dense(num_classes-2,activation='linear')(y1)
     quad_emb = tf.keras.layers.Dense(num_classes-2,activation='linear')(emb)
-    quad = tf.keras.layers.add([quad,quad_emb],name='quad')
+    quad = tf.keras.layers.add([quad,quad_emb])
+
+    fact = tf.constant(np.arange(2,num_classes,1),dtype=tf.float32)
+    fact = tf.stack([fact for it in range(num_classes-2)],axis=-2)-1
+    triangular = tf.linalg.LinearOperatorLowerTriangular(tf.ones_like(fact)).to_dense()
+    fact = tf.keras.layers.multiply([triangular,fact])+1
+    fact = tf.keras.layers.Lambda(lambda z: tf.math.reduce_prod(z,axis=-1))(fact)
+    quad = tf.keras.layers.Lambda(lambda z: z[0]/z[1],name='quad')([quad,fact])
+    sum_quad = tf.keras.layers.add(tf.unstack(quad,axis=-1))
 
     for dim in range(2):
         quad = tf.keras.layers.Lambda(lambda z: tf.expand_dims(z,axis=1))(quad)
 
-    val_quad_x = tf.pow(dx_n,tf.constant(np.asarray(np.arange(2,num_classes),dtype='float32')))
-    val_quad_y = tf.pow(dy_n,tf.constant(np.asarray(np.arange(2,num_classes),dtype='float32')))
+    val_quad_x = tf.pow(dx_n,tf.constant(np.asarray(np.arange(1,num_classes-1),dtype='float32')))
+    val_quad_y = tf.pow(dy_n,tf.constant(np.asarray(np.arange(1,num_classes-1),dtype='float32')))
 
     quad_val_x = tf.keras.layers.multiply([quad,val_quad_x])
     quad_val_x = tf.keras.layers.Lambda(lambda z: tf.unstack(z,axis=-1))(quad_val_x)
@@ -742,10 +675,15 @@ def decreasing_taylor(input_shape, it_lim = 1,num_classes=10,CROP=256):
 
     bound_x = tf.reduce_max(quad_val_x,axis=(1,2))
     bound_y = tf.reduce_max(quad_val_y,axis=(1,2))
-    bound = tf.reduce_max([bound_x,bound_y],axis=0)
+    bound = tf.math.abs(tf.reduce_max([bound_x,bound_y],axis=0))
 
     linear = tf.keras.layers.add((linear,tf.expand_dims(bound,axis=-1)),name='linear')
     linear = tf.keras.layers.Lambda(lambda z: -z)(linear)
+
+    negative = tf.keras.layers.add([cte,linear,sum_quad])
+    negative = tf.cast(tf.less(negative,0),dtype=tf.float32)
+    negative = tf.keras.layers.multiply([sum_quad,negative])
+    cte = tf.keras.layers.add([cte,-negative],name='cte')
 
 
     outputs = inputs
