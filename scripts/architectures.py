@@ -695,6 +695,131 @@ def decreasing(input_shape, it_lim = 1,num_classes=10,CROP=256):
         
     return tf.keras.models.Model([inputs,input_emb], outputs)
 
+def decreasing_taylor(input_shape, it_lim = 1,num_classes=10,CROP=256):
+
+    inputs = tf.keras.Input(shape=input_shape,name='input')
+    input_emb = tf.keras.layers.Input(shape = (1),name='input_emb')
+
+    emb = tf.keras.layers.Dense(num_classes,activation='relu')(input_emb)
+    emb = tf.keras.layers.Dense(num_classes,activation='sigmoid',name='embedding')(emb)
+    x = classifier(inputs, num_classes=num_classes,CROP=CROP)
+
+    y = tf.keras.layers.Flatten()(x)
+
+    y1 = y
+
+    dx = tf.keras.layers.Lambda(lambda z: z[:,:-2,1:-1] - z[:,1:-1,1:-1])(inputs)
+    dy = tf.keras.layers.Lambda(lambda z: z[:,2:,1:-1] - z[:,1:-1,1:-1])(inputs)
+    dx_n = tf.keras.layers.Lambda(lambda z: tf.math.abs(z)/tf.reduce_max(tf.math.abs(z)))(dx)
+    dy_n = tf.keras.layers.Lambda(lambda z: tf.math.abs(z)/tf.reduce_max(tf.math.abs(z)))(dy)
+    dx_n = tf.keras.layers.Lambda(lambda z:tf.math.pow(z,2))(dx_n)
+    dy_n = tf.keras.layers.Lambda(lambda z:tf.math.pow(z,2))(dy_n)
+
+    cte = tf.keras.layers.Dense(1,activation = 'relu')(y1)
+    cte_emb = tf.keras.layers.Dense(1,activation = 'relu')(emb)
+    cte = tf.keras.layers.add([cte,cte_emb])
+    cte = tf.keras.layers.Lambda(lambda z: tf.math.pow(z,2),name='cte')(cte)
+
+    linear = tf.keras.layers.Dense(1,activation = 'relu')(y1)
+    linear_emb = tf.keras.layers.Dense(1,activation = 'relu')(emb)
+    linear = tf.keras.layers.add([linear,linear_emb])
+    quad = tf.keras.layers.Dense(num_classes-2,activation='linear')(y1)
+    quad_emb = tf.keras.layers.Dense(num_classes-2,activation='linear')(emb)
+    quad = tf.keras.layers.add([quad,quad_emb],name='quad')
+
+    for dim in range(2):
+        quad = tf.keras.layers.Lambda(lambda z: tf.expand_dims(z,axis=1))(quad)
+
+    val_quad_x = tf.pow(dx_n,tf.constant(np.asarray(np.arange(2,num_classes),dtype='float32')))
+    val_quad_y = tf.pow(dy_n,tf.constant(np.asarray(np.arange(2,num_classes),dtype='float32')))
+
+    quad_val_x = tf.keras.layers.multiply([quad,val_quad_x])
+    quad_val_x = tf.keras.layers.Lambda(lambda z: tf.unstack(z,axis=-1))(quad_val_x)
+    quad_val_x = tf.keras.layers.add(quad_val_x)
+    quad_val_y = tf.keras.layers.multiply([quad,val_quad_y])
+    quad_val_y = tf.keras.layers.Lambda(lambda z: tf.unstack(z,axis=-1))(quad_val_y)
+    quad_val_y = tf.keras.layers.add(quad_val_y)
+
+    bound_x = tf.reduce_max(quad_val_x,axis=(1,2))
+    bound_y = tf.reduce_max(quad_val_y,axis=(1,2))
+    bound = tf.reduce_max([bound_x,bound_y],axis=0)
+
+    linear = tf.keras.layers.add((linear,tf.expand_dims(bound,axis=-1)),name='linear')
+    linear = tf.keras.layers.Lambda(lambda z: -z)(linear)
+
+
+    outputs = inputs
+
+    for num_it in range(it_lim):
+
+        dx = tf.keras.layers.Lambda(lambda z: z[:,:-2,1:-1] - z[:,1:-1,1:-1])(outputs)
+        dy = tf.keras.layers.Lambda(lambda z: z[:,2:,1:-1] - z[:,1:-1,1:-1])(outputs)
+        dz = tf.keras.layers.Lambda(lambda z: z[:,1:-1,2:] - z[:,1:-1,1:-1])(outputs)
+        dw = tf.keras.layers.Lambda(lambda z: z[:,1:-1,:-2] - z[:,1:-1,1:-1])(outputs)
+
+        dx_n = tf.keras.layers.Lambda(lambda z: tf.math.abs(z)/tf.reduce_max(tf.math.abs(z)))(dx)
+        dy_n = tf.keras.layers.Lambda(lambda z: tf.math.abs(z)/tf.reduce_max(tf.math.abs(z)))(dy)
+        dz_n = tf.keras.layers.Lambda(lambda z: tf.math.abs(z)/tf.reduce_max(tf.math.abs(z)))(dz)
+        dw_n = tf.keras.layers.Lambda(lambda z: tf.math.abs(z)/tf.reduce_max(tf.math.abs(z)))(dw)
+
+        dx_n = tf.keras.layers.Lambda(lambda z:tf.math.pow(z,2),name=f'dx_{num_it}')(dx_n)
+        dy_n = tf.keras.layers.Lambda(lambda z:tf.math.pow(z,2))(dy_n)
+        dz_n = tf.keras.layers.Lambda(lambda z:tf.math.pow(z,2))(dz_n)
+        dw_n = tf.keras.layers.Lambda(lambda z:tf.math.pow(z,2))(dw_n)
+
+        val_quad_x = tf.pow(dx_n,tf.constant(np.asarray(np.arange(2,num_classes),dtype='float32')))
+        val_quad_y = tf.pow(dy_n,tf.constant(np.asarray(np.arange(2,num_classes),dtype='float32')))
+        val_quad_z = tf.pow(dz_n,tf.constant(np.asarray(np.arange(2,num_classes),dtype='float32')))
+        val_quad_w = tf.pow(dw_n,tf.constant(np.asarray(np.arange(2,num_classes),dtype='float32')))
+
+        quad_val_x = tf.keras.layers.multiply([quad,val_quad_x])
+        quad_val_x = tf.keras.layers.Lambda(lambda z: tf.unstack(z,axis=-1))(quad_val_x)
+        quad_val_x = tf.keras.layers.add(quad_val_x)
+        quad_val_x = tf.keras.layers.Lambda(lambda z: tf.expand_dims(z,axis=-1))(quad_val_x)
+        quad_val_y = tf.keras.layers.multiply([quad,val_quad_y])
+        quad_val_y = tf.keras.layers.Lambda(lambda z: tf.unstack(z,axis=-1))(quad_val_y)
+        quad_val_y = tf.keras.layers.add(quad_val_y)
+        quad_val_y = tf.keras.layers.Lambda(lambda z: tf.expand_dims(z,axis=-1))(quad_val_y)
+        quad_val_z = tf.keras.layers.multiply([quad,val_quad_z])
+        quad_val_z = tf.keras.layers.Lambda(lambda z: tf.unstack(z,axis=-1))(quad_val_z)
+        quad_val_z = tf.keras.layers.add(quad_val_z)
+        quad_val_z = tf.keras.layers.Lambda(lambda z: tf.expand_dims(z,axis=-1))(quad_val_z)
+        quad_val_w = tf.keras.layers.multiply([quad,val_quad_w])
+        quad_val_w = tf.keras.layers.Lambda(lambda z: tf.unstack(z,axis=-1))(quad_val_w)
+        quad_val_w = tf.keras.layers.add(quad_val_w)
+        quad_val_w = tf.keras.layers.Lambda(lambda z: tf.expand_dims(z,axis=-1))(quad_val_w)
+
+        linear_x = tf.keras.layers.multiply((linear,dx_n))
+        linear_y = tf.keras.layers.multiply((linear,dy_n))
+        linear_z = tf.keras.layers.multiply((linear,dz_n))
+        linear_w = tf.keras.layers.multiply((linear,dw_n))
+
+        poly_x = tf.keras.layers.add([cte,linear_x,quad_val_x],name=f'coeff_x_{num_it}')
+        poly_y = tf.keras.layers.add([cte,linear_y,quad_val_y])
+        poly_z = tf.keras.layers.add([cte,linear_z,quad_val_z])
+        poly_w = tf.keras.layers.add([cte,linear_w,quad_val_w])
+
+        outputs_x = tf.keras.layers.multiply([poly_x,dx])
+        outputs_y = tf.keras.layers.multiply([poly_y,dy])
+        outputs_z = tf.keras.layers.multiply([poly_z,dz])
+        outputs_w = tf.keras.layers.multiply([poly_w,dw])
+
+        outputs_it = tf.keras.layers.add([outputs_x,outputs_y,outputs_z,outputs_w])
+        new_outputs = tf.ones_like(outputs_it)
+        zeros_y = tf.expand_dims(tf.zeros_like(outputs_it)[:,1],axis=-1)
+        zeros_x = tf.expand_dims(tf.zeros_like(outputs)[:,1],axis=-3)
+        pad_y = tf.keras.layers.Concatenate(axis=-2)([zeros_y,outputs_it,zeros_y])
+        new_pad_y = tf.keras.layers.Concatenate(axis=-2)([zeros_y,new_outputs,zeros_y])
+        outputs_it = tf.keras.layers.Concatenate(axis=1)([zeros_x,pad_y,zeros_x])
+        new_outputs = tf.keras.layers.Concatenate(axis=1)([zeros_x,new_pad_y,zeros_x])
+        new_outputs = tf.keras.layers.multiply([new_outputs,outputs])
+        new_outputs = tf.keras.layers.add([0.1*outputs_it,new_outputs])
+        new_outputs = tf.keras.layers.Lambda(lambda z: tf.clip_by_value(z,0,1))(new_outputs)
+        outputs = new_outputs
+
+        
+    return tf.keras.models.Model([inputs,input_emb], outputs)
+
 
 
 
@@ -712,6 +837,9 @@ def get_model(arch,it_lim,image_size,typ='gaussian',var = 1,num_classes=1,CROP =
 
     if arch == "decreasing":
         return decreasing(image_size + (1,), it_lim = it_lim,num_classes=num_classes,CROP=CROP)
+    
+    if arch == "decreasing_taylor":
+        return decreasing_taylor(image_size + (1,), it_lim = it_lim,num_classes=num_classes,CROP=CROP)
     
     if arch == "unet":
         return get_unet(tf.keras.layers.Input(shape=image_size + (1,)))
