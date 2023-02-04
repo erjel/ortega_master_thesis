@@ -4,7 +4,7 @@ import tensorflow as tf
 
 def anisodiff(img,niter=1,lambd=50,gamma=0.1,step=(1.,1.),sigma=0, option=1,ploton=False):
 
-    '''
+
     img = img.astype('float32')
     imgout = img.copy()
 
@@ -15,17 +15,7 @@ def anisodiff(img,niter=1,lambd=50,gamma=0.1,step=(1.,1.),sigma=0, option=1,plot
     gS = np.ones_like(imgout)
     gE = gS.copy()
 
-    if ploton:
-
-        fig = pl.figure(figsize=(20,5.5),num="Anisotropic diffusion")
-        ax1,ax2 = fig.add_subplot(1,2,1),fig.add_subplot(1,2,2)
-
-        ax1.imshow(img,interpolation='nearest')
-        ih = ax2.imshow(imgout,interpolation='nearest',animated=True)
-        ax1.set_title("Original image")
-        ax2.set_title("Iteration 0")
-
-        fig.canvas.draw()
+   
 
     for ii in np.arange(1,niter):
 
@@ -56,12 +46,6 @@ def anisodiff(img,niter=1,lambd=50,gamma=0.1,step=(1.,1.),sigma=0, option=1,plot
 
         imgout += gamma*(NS+EW)
 
-        if ploton:
-            iterstring = "Iteration %i" %(ii+1)
-            ih.set_data(imgout)
-            ax2.set_title(iterstring)
-            fig.canvas.draw()
-
             
 
     return imgout
@@ -88,6 +72,7 @@ def anisodiff(img,niter=1,lambd=50,gamma=0.1,step=(1.,1.),sigma=0, option=1,plot
         img = img_new 
         
     return img_new
+    '''
     
 def anisodiff_nn(img,niter=1,lambd=50,gamma=0.1,step=(1.,1.),sigma=0, option=1,ploton=False):
 

@@ -7,7 +7,7 @@ from glob import glob
 
 
 
-def augment(yx, crop=256, do_flips=False, do_rotate=False, do_scale=False):
+def augment(yx, crop=256, do_flips=True, do_rotate=True, do_scale=False):
     
     if do_flips:
         if np.random.uniform(0,1) > 0.5:
@@ -39,6 +39,7 @@ def sample_images(frame_nums):
         try:
             #var = np.random.uniform(var_d,var_u)
             var = abs(var_u - np.random.exponential(var_d))
+            #var = np.random.choice([10,20,50])
             img = open_frame(np.random.choice(frame_nums),var,CROP)
         except Exception as e:
             print(f'Exception {e} on file')
@@ -47,6 +48,7 @@ def sample_images(frame_nums):
         for n in range(N_REPEAT_FRAME):
             #var = np.random.uniform(var_d,var_u)
             var = abs(var_u - np.random.exponential(var_d))
+            #var = np.random.choice([10,20,50])
             img = open_frame(np.random.choice(frame_nums),var,CROP)
             a =  augment(img,crop = CROP)
             yield np.concatenate((var*np.ones((1,)+img[0].shape),a))
