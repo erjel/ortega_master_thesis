@@ -38,8 +38,8 @@ def sample_images(frame_nums):
     while True:
         try:
             #var = np.random.uniform(var_d,var_u)
-            var = abs(var_u - np.random.exponential(var_d))
-            #var = np.random.choice([10,20,50])
+            #var = abs(var_u - np.random.exponential(var_d))
+            var = np.random.choice([10,20,50])
             img = open_frame(np.random.choice(frame_nums),var,CROP)
         except Exception as e:
             print(f'Exception {e} on file')
@@ -47,8 +47,8 @@ def sample_images(frame_nums):
             break
         for n in range(N_REPEAT_FRAME):
             #var = np.random.uniform(var_d,var_u)
-            var = abs(var_u - np.random.exponential(var_d))
-            #var = np.random.choice([10,20,50])
+            #var = abs(var_u - np.random.exponential(var_d))
+            var = np.random.choice([10,20,50])
             img = open_frame(np.random.choice(frame_nums),var,CROP)
             a =  augment(img,crop = CROP)
             yield np.concatenate((var*np.ones((1,)+img[0].shape),a))

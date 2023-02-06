@@ -1,2 +1,2 @@
-model_checkpoint_path: "splinescont_gaussian_15"
-all_model_checkpoint_paths: "splinescont_gaussian_15"
+model_checkpoint_path: "splinescont_gaussian_50"
+all_model_checkpoint_paths: "splinescont_gaussian_50"
