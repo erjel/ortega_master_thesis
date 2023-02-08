@@ -270,7 +270,7 @@ def splines(input_shape, it_lim = 10,num_classes=10,order1 = 1,CROP=256,gamma=1)
         
     return tf.keras.models.Model([inputs,input_emb], outputs)
 
-def splines_cont(input_shape, it_lim = 10,num_classes=10,order1 = 1,CROP=256,gamma=1,initial=True):
+def splines_cont(input_shape, it_lim = 10,num_classes=10,order1 = 1,CROP=256,gamma=1,initial=False):
     order = order1
     
     inputs = tf.keras.Input(shape=input_shape,name='input')
@@ -310,7 +310,7 @@ def splines_cont(input_shape, it_lim = 10,num_classes=10,order1 = 1,CROP=256,gam
 
     a = tf.keras.layers.Reshape((num_classes,order))(a)
 
-    b = (1/num_classes)*tf.ones_like(a)
+    b = tf.keras.layers.Lambda(lambda z:tf.multiply(np.asarray(1/num_classes,dtype=np.float32),tf.ones_like(z)))(a)
     b = tf.pow(b,np.arange(1,order+1))
     b = tf.keras.layers.multiply([a,b])
 
@@ -336,7 +336,7 @@ def splines_cont(input_shape, it_lim = 10,num_classes=10,order1 = 1,CROP=256,gam
         pm_a = np.asarray(pm_a,dtype='float32')
         pm_a = tf.transpose(tf.multiply(pm_a,tf.transpose(tf.ones_like(a),perm=(0,2,1))),perm=(0,2,1))
 
-        pm_b = (1/num_classes)*tf.ones_like(pm_a)
+        pm_b = tf.keras.layers.Lambda(lambda z:(1/num_classes)*z)(pm_a)
         pm_b = tf.pow(pm_b,np.arange(1,order+1))
         pm_b = tf.keras.layers.multiply([pm_a,pm_b])
 
@@ -459,7 +459,7 @@ def splines_cont(input_shape, it_lim = 10,num_classes=10,order1 = 1,CROP=256,gam
         NS = tf.keras.layers.Lambda(lambda z: tf.experimental.numpy.diff(z,axis=1))(NS)
         EW = tf.keras.layers.Lambda(lambda z: tf.experimental.numpy.diff(z,axis=2))(EW)
 
-        mult = gamma*tf.ones_like(NS)
+        mult = tf.keras.layers.Lambda(lambda z: tf.multiply(tf.cast(gamma,dtype=tf.float32),z))(tf.ones_like(NS))
         NS_mod = NS
         EW_mod = EW
 
@@ -471,124 +471,7 @@ def splines_cont(input_shape, it_lim = 10,num_classes=10,order1 = 1,CROP=256,gam
         
     return tf.keras.models.Model([inputs,input_emb], outputs)
 
-def border_splines(input_shape,border_classifier, it_lim = 1,num_classes=10,order1 = 1,CROP=256):
-    order = order1
-    inputs = tf.keras.Input(shape=input_shape)
-    x = classifier(inputs, num_classes=num_classes,CROP=CROP)
 
-    x = tf.keras.layers.Dropout(0.5)(x)
-    y = tf.keras.layers.Flatten()(x)
-
-    parts = tf.keras.layers.Lambda(lambda z:tf.constant(np.linspace(0,1,num_classes+1)))(y)
-    parts = tf.keras.layers.Lambda(lambda z:z/tf.math.reduce_sum(z))(parts)
-
-    outputs = inputs
-
-    for num_it in range(it_lim):
-
-        dx = tf.keras.layers.Lambda(lambda z: z[:,:-2,1:-1] - z[:,1:-1,1:-1])(outputs)
-        dy = tf.keras.layers.Lambda(lambda z: z[:,2:,1:-1] - z[:,1:-1,1:-1])(outputs)
-        dz = tf.keras.layers.Lambda(lambda z: z[:,1:-1,2:] - z[:,1:-1,1:-1])(outputs)
-        dw = tf.keras.layers.Lambda(lambda z: z[:,1:-1,:-2] - z[:,1:-1,1:-1])(outputs)
-
-        dx2 = tf.keras.layers.Lambda(lambda z:tf.math.pow(z,2))(dx)
-        dy2 = tf.keras.layers.Lambda(lambda z:tf.math.pow(z,2))(dy)
-        dz2 = tf.keras.layers.Lambda(lambda z:tf.math.pow(z,2))(dz)
-        dw2 = tf.keras.layers.Lambda(lambda z:tf.math.pow(z,2))(dw)
-
-        norm = tf.keras.layers.add([dx2,dy2,dz2,dw2],name=f'norm_{num_it}')
-
-
-        triangular = tf.constant(tf.linalg.LinearOperatorLowerTriangular(tf.ones((num_classes+1,num_classes+1))).to_dense())
-        triangular = tf.math.maximum(0,triangular-tf.transpose(triangular))
-        partition = tf.keras.layers.multiply([tf.expand_dims(triangular,axis=0),tf.expand_dims(parts,axis=-2)])
-        partition = tf.keras.layers.Lambda(lambda z: tf.math.reduce_sum(z,axis=2))(partition)
-        partition = tf.keras.layers.multiply([tf.math.reduce_max(norm,axis=(1,2)),partition],name=f'partition_{num_it}')
-
-        partition_low = partition[:,:-1]
-        partition_low = tf.expand_dims(tf.expand_dims(partition_low,axis=1),axis=1)
-        partition_up = partition[:,1:]
-        partition_up = tf.expand_dims(tf.expand_dims(partition_up,axis=1),axis=1)
-        ineq1_x = tf.greater_equal(dx, partition_low)
-        ineq2_x = tf.less(dx,partition_up)
-        ineq1_y = tf.greater_equal(dy, partition_low)
-        ineq2_y = tf.less(dy,partition_up)
-        ineq1_z = tf.greater_equal(dz, partition_low)
-        ineq2_z = tf.less(dz,partition_up)
-        ineq1_w = tf.greater_equal(dw, partition_low)
-        ineq2_w = tf.less(dw,partition_up)
-        partition = tf.expand_dims(tf.expand_dims(partition,axis=1),axis=1)
-
-        interval_x = tf.cast(tf.math.logical_and(ineq1_x,ineq2_x),'float32')
-        interval_y = tf.cast(tf.math.logical_and(ineq1_y,ineq2_y),'float32')
-        interval_z = tf.cast(tf.math.logical_and(ineq1_z,ineq2_z),'float32')
-        interval_w = tf.cast(tf.math.logical_and(ineq1_w,ineq2_w),'float32')
-
-        if num_it == 0:
-
-            ct_low = tf.keras.layers.Dense(num_classes*(order+1),activation='linear')(y)
-            ct_low = tf.keras.layers.Reshape((num_classes,order+1),name=f'coeff_spline_{num_it}_low')(ct_low)
-            ct_low = tf.keras.layers.Lambda(lambda z: tf.expand_dims(tf.expand_dims(z,axis=1),axis=1))(ct_low)
-
-            ct_up = tf.keras.layers.Dense(num_classes*(order+1),activation='linear')(y)
-            ct_up = tf.keras.layers.Reshape((num_classes,order+1),name=f'coeff_spline_{num_it}_up')(ct_up)
-            ct_up = tf.keras.layers.Lambda(lambda z: tf.expand_dims(tf.expand_dims(z,axis=1),axis=1))(ct_up)
-
-
-            class_up = tf.expand_dims(tf.cast(border_classifier(inputs)>0.5,'float32'),axis=-1)
-            class_low = tf.expand_dims(tf.cast(border_classifier(inputs)<=0.5,'float32'),axis=-1)
-
-            power_norm = tf.pow(norm,tf.constant(np.asarray(np.arange(order+1),dtype='float32')))
-            power_norm = tf.keras.layers.Lambda(lambda z: tf.expand_dims(z,axis=-2))(power_norm)
-
-            spline_low = tf.keras.layers.multiply([class_low[:,1:-1,1:-1],ct_low,power_norm])
-            spline_low = tf.keras.layers.Lambda(lambda z: tf.unstack(z,axis=-1))(spline_low)
-            spline_low = tf.keras.layers.add(spline_low)
-            spline_x_low = tf.keras.layers.multiply([spline_low,interval_x])
-            spline_y_low = tf.keras.layers.multiply([spline_low,interval_y])
-            spline_z_low = tf.keras.layers.multiply([spline_low,interval_z])
-            spline_w_low = tf.keras.layers.multiply([spline_low,interval_w])
-
-            spline_up = tf.keras.layers.multiply([class_up[:,1:-1,1:-1],ct_up,power_norm])
-            spline_up = tf.keras.layers.Lambda(lambda z: tf.unstack(z,axis=-1))(spline_up)
-            spline_up = tf.keras.layers.add(spline_up)
-            spline_x_up = tf.keras.layers.multiply([spline_up,interval_x])
-            spline_y_up = tf.keras.layers.multiply([spline_up,interval_y])
-            spline_z_up = tf.keras.layers.multiply([spline_up,interval_z])
-            spline_w_up = tf.keras.layers.multiply([spline_up,interval_w])
-
-            spline_x = tf.keras.layers.add([spline_x_low,spline_x_up],name = 'spline_x')
-            spline_y = tf.keras.layers.add([spline_y_low,spline_y_up],name = 'spline_y')
-            spline_z = tf.keras.layers.add([spline_z_low,spline_z_up],name = 'spline_z')
-            spline_w = tf.keras.layers.add([spline_w_low,spline_w_up],name = 'spline_w')
-
-
-
-            coeff_x = tf.expand_dims(tf.keras.layers.add(tf.unstack(spline_x,axis=-1),name=f'coeff_x_{num_it}'),axis=-1)
-            coeff_y = tf.expand_dims(tf.keras.layers.add(tf.unstack(spline_y,axis=-1),name=f'coeff_y_{num_it}'),axis=-1)
-            coeff_z = tf.expand_dims(tf.keras.layers.add(tf.unstack(spline_z,axis=-1),name=f'coeff_z_{num_it}'),axis=-1)
-            coeff_w = tf.expand_dims(tf.keras.layers.add(tf.unstack(spline_w,axis=-1),name=f'coeff_w_{num_it}'),axis=-1)
-
-
-
-
-
-        outputs_x = tf.keras.layers.multiply([coeff_x,dx])
-        outputs_y = tf.keras.layers.multiply([coeff_y,dy])
-        outputs_z = tf.keras.layers.multiply([coeff_z,dz])
-        outputs_w = tf.keras.layers.multiply([coeff_w,dw])
-
-
-        outputs_it = tf.keras.layers.add([outputs_x,outputs_y,outputs_z,outputs_w])
-        zeros_y = tf.expand_dims(tf.zeros_like(outputs_it)[:,1],axis=-1)
-        zeros_x = tf.expand_dims(tf.zeros_like(outputs)[:,1],axis=-3)
-        pad_y = tf.keras.layers.Concatenate(axis=-2)([zeros_y,outputs_it,zeros_y])
-        outputs_it = tf.keras.layers.Concatenate(axis=1)([zeros_x,pad_y,zeros_x])
-        outputs = tf.keras.layers.add([0.1*outputs_it,outputs])
-        outputs = tf.keras.layers.Lambda(lambda z: tf.clip_by_value(z,0,1))(outputs)
-
-    return tf.keras.models.Model(inputs, outputs)
-    
     
 def decreasing(input_shape, it_lim = 1,num_classes=10,CROP=256):
 
@@ -691,7 +574,7 @@ def decreasing(input_shape, it_lim = 1,num_classes=10,CROP=256):
         
     return tf.keras.models.Model([inputs,input_emb], outputs)
 
-def decreasing_taylor(input_shape, it_lim = 1,num_classes=10,CROP=256):
+def decreasing_taylor(input_shape, it_lim = 1,num_classes=10,CROP=256,gamma=1):
 
     inputs = tf.keras.Input(shape=input_shape,name='input')
     input_emb = tf.keras.layers.Input(shape = (1),name='input_emb')
@@ -760,71 +643,57 @@ def decreasing_taylor(input_shape, it_lim = 1,num_classes=10,CROP=256):
     outputs = inputs
 
     for num_it in range(it_lim):
+        
+        difS = tf.keras.layers.Lambda(lambda z: tf.experimental.numpy.diff(z,axis=1))(outputs)
+        difE = tf.keras.layers.Lambda(lambda z: tf.experimental.numpy.diff(z,axis=2))(outputs)
+        zeros_y = tf.expand_dims(tf.zeros_like(outputs)[:,1],axis=-1)
+        zeros_x = tf.expand_dims(tf.zeros_like(inputs)[:,1],axis=-3)
+        deltaS = tf.keras.layers.Concatenate(axis=1)([difS,zeros_x])
+        deltaE = tf.keras.layers.Concatenate(axis=2)([difE,zeros_y])
 
-        dx = tf.keras.layers.Lambda(lambda z: z[:,:-2,1:-1] - z[:,1:-1,1:-1])(outputs)
-        dy = tf.keras.layers.Lambda(lambda z: z[:,2:,1:-1] - z[:,1:-1,1:-1])(outputs)
-        dz = tf.keras.layers.Lambda(lambda z: z[:,1:-1,2:] - z[:,1:-1,1:-1])(outputs)
-        dw = tf.keras.layers.Lambda(lambda z: z[:,1:-1,:-2] - z[:,1:-1,1:-1])(outputs)
+        dS_n = tf.keras.layers.Lambda(lambda z: tf.math.abs(z)/tf.reduce_max(tf.math.abs(z)))(deltaS)
+        dE_n = tf.keras.layers.Lambda(lambda z: tf.math.abs(z)/tf.reduce_max(tf.math.abs(z)))(deltaE)
 
-        dx_n = tf.keras.layers.Lambda(lambda z: tf.math.abs(z)/tf.reduce_max(tf.math.abs(z)))(dx)
-        dy_n = tf.keras.layers.Lambda(lambda z: tf.math.abs(z)/tf.reduce_max(tf.math.abs(z)))(dy)
-        dz_n = tf.keras.layers.Lambda(lambda z: tf.math.abs(z)/tf.reduce_max(tf.math.abs(z)))(dz)
-        dw_n = tf.keras.layers.Lambda(lambda z: tf.math.abs(z)/tf.reduce_max(tf.math.abs(z)))(dw)
+        dS2 = tf.keras.layers.Lambda(lambda z:tf.math.pow(z,2),name=f'dx_{num_it}')(dS_n)
+        dE2 = tf.keras.layers.Lambda(lambda z:tf.math.pow(z,2))(dE_n)
 
-        dx_n = tf.keras.layers.Lambda(lambda z:tf.math.pow(z,2),name=f'dx_{num_it}')(dx_n)
-        dy_n = tf.keras.layers.Lambda(lambda z:tf.math.pow(z,2))(dy_n)
-        dz_n = tf.keras.layers.Lambda(lambda z:tf.math.pow(z,2))(dz_n)
-        dw_n = tf.keras.layers.Lambda(lambda z:tf.math.pow(z,2))(dw_n)
+        val_quad_S = tf.pow(dS2,tf.constant(np.asarray(np.arange(2,num_classes),dtype='float32')))
+        val_quad_E = tf.pow(dE2,tf.constant(np.asarray(np.arange(2,num_classes),dtype='float32')))
 
-        val_quad_x = tf.pow(dx_n,tf.constant(np.asarray(np.arange(2,num_classes),dtype='float32')))
-        val_quad_y = tf.pow(dy_n,tf.constant(np.asarray(np.arange(2,num_classes),dtype='float32')))
-        val_quad_z = tf.pow(dz_n,tf.constant(np.asarray(np.arange(2,num_classes),dtype='float32')))
-        val_quad_w = tf.pow(dw_n,tf.constant(np.asarray(np.arange(2,num_classes),dtype='float32')))
+        quad_val_S = tf.keras.layers.multiply([quad,val_quad_S])
+        quad_val_S = tf.keras.layers.Lambda(lambda z: tf.unstack(z,axis=-1))(quad_val_S)
+        quad_val_S = tf.keras.layers.add(quad_val_S)
+        quad_val_S = tf.keras.layers.Lambda(lambda z: tf.expand_dims(z,axis=-1))(quad_val_S)
+        quad_val_E = tf.keras.layers.multiply([quad,val_quad_E])
+        quad_val_E = tf.keras.layers.Lambda(lambda z: tf.unstack(z,axis=-1))(quad_val_E)
+        quad_val_E = tf.keras.layers.add(quad_val_E)
+        quad_val_E = tf.keras.layers.Lambda(lambda z: tf.expand_dims(z,axis=-1))(quad_val_E)
+        
 
-        quad_val_x = tf.keras.layers.multiply([quad,val_quad_x])
-        quad_val_x = tf.keras.layers.Lambda(lambda z: tf.unstack(z,axis=-1))(quad_val_x)
-        quad_val_x = tf.keras.layers.add(quad_val_x)
-        quad_val_x = tf.keras.layers.Lambda(lambda z: tf.expand_dims(z,axis=-1))(quad_val_x)
-        quad_val_y = tf.keras.layers.multiply([quad,val_quad_y])
-        quad_val_y = tf.keras.layers.Lambda(lambda z: tf.unstack(z,axis=-1))(quad_val_y)
-        quad_val_y = tf.keras.layers.add(quad_val_y)
-        quad_val_y = tf.keras.layers.Lambda(lambda z: tf.expand_dims(z,axis=-1))(quad_val_y)
-        quad_val_z = tf.keras.layers.multiply([quad,val_quad_z])
-        quad_val_z = tf.keras.layers.Lambda(lambda z: tf.unstack(z,axis=-1))(quad_val_z)
-        quad_val_z = tf.keras.layers.add(quad_val_z)
-        quad_val_z = tf.keras.layers.Lambda(lambda z: tf.expand_dims(z,axis=-1))(quad_val_z)
-        quad_val_w = tf.keras.layers.multiply([quad,val_quad_w])
-        quad_val_w = tf.keras.layers.Lambda(lambda z: tf.unstack(z,axis=-1))(quad_val_w)
-        quad_val_w = tf.keras.layers.add(quad_val_w)
-        quad_val_w = tf.keras.layers.Lambda(lambda z: tf.expand_dims(z,axis=-1))(quad_val_w)
+        linear_S = tf.keras.layers.multiply((linear,dS2))
+        linear_E = tf.keras.layers.multiply((linear,dE2))
 
-        linear_x = tf.keras.layers.multiply((linear,dx_n))
-        linear_y = tf.keras.layers.multiply((linear,dy_n))
-        linear_z = tf.keras.layers.multiply((linear,dz_n))
-        linear_w = tf.keras.layers.multiply((linear,dw_n))
+        gS = tf.keras.layers.add([cte,linear_S,quad_val_S],name=f'gS_{num_it}')
+        gE = tf.keras.layers.add([cte,linear_E,quad_val_E],name=f'gE_{num_it}')
 
-        poly_x = tf.keras.layers.add([cte,linear_x,quad_val_x],name=f'coeff_x_{num_it}')
-        poly_y = tf.keras.layers.add([cte,linear_y,quad_val_y])
-        poly_z = tf.keras.layers.add([cte,linear_z,quad_val_z])
-        poly_w = tf.keras.layers.add([cte,linear_w,quad_val_w])
+        E = tf.keras.layers.multiply((gE,deltaE))
+        S = tf.keras.layers.multiply((gS,deltaS))
 
-        outputs_x = tf.keras.layers.multiply([poly_x,dx])
-        outputs_y = tf.keras.layers.multiply([poly_y,dy])
-        outputs_z = tf.keras.layers.multiply([poly_z,dz])
-        outputs_w = tf.keras.layers.multiply([poly_w,dw])
+        NS = S
+        EW = E
+        NS = tf.keras.layers.Concatenate(axis=1)([zeros_x,NS])
+        EW = tf.keras.layers.Concatenate(axis=2)([zeros_y,EW])
+        NS = tf.keras.layers.Lambda(lambda z: tf.experimental.numpy.diff(z,axis=1))(NS)
+        EW = tf.keras.layers.Lambda(lambda z: tf.experimental.numpy.diff(z,axis=2))(EW)
 
-        outputs_it = tf.keras.layers.add([outputs_x,outputs_y,outputs_z,outputs_w])
-        new_outputs = tf.ones_like(outputs_it)
-        zeros_y = tf.expand_dims(tf.zeros_like(outputs_it)[:,1],axis=-1)
-        zeros_x = tf.expand_dims(tf.zeros_like(outputs)[:,1],axis=-3)
-        pad_y = tf.keras.layers.Concatenate(axis=-2)([zeros_y,outputs_it,zeros_y])
-        new_pad_y = tf.keras.layers.Concatenate(axis=-2)([zeros_y,new_outputs,zeros_y])
-        outputs_it = tf.keras.layers.Concatenate(axis=1)([zeros_x,pad_y,zeros_x])
-        new_outputs = tf.keras.layers.Concatenate(axis=1)([zeros_x,new_pad_y,zeros_x])
-        new_outputs = tf.keras.layers.multiply([new_outputs,outputs])
-        new_outputs = tf.keras.layers.add([0.1*outputs_it,new_outputs])
-        new_outputs = tf.keras.layers.Lambda(lambda z: tf.clip_by_value(z,0,1))(new_outputs)
-        outputs = new_outputs
+        mult = tf.keras.layers.Lambda(lambda z: tf.multiply(tf.cast(gamma,dtype=tf.float32),z))(tf.ones_like(NS))
+        NS_mod = NS
+        EW_mod = EW
+
+        adding = tf.keras.layers.add([NS,EW])
+        adding = tf.keras.layers.multiply((mult,adding))
+
+        outputs = tf.keras.layers.add([outputs,adding])
 
         
     return tf.keras.models.Model([inputs,input_emb], outputs)
@@ -859,7 +728,7 @@ def decreasing_linear(input_shape, it_lim = 1,num_classes=10,CROP=256,order=1,ga
     a = tf.keras.layers.Reshape((num_classes,order))(a)
     a = tf.keras.layers.Lambda(lambda z:-tf.math.pow(z,2))(a)
     
-    b = (1/num_classes)*tf.ones_like(a)
+    b = tf.keras.layers.Lambda(lambda z:tf.multiply(np.asarray(1/num_classes,dtype=np.float32),tf.ones_like(z)))(a)
     b = tf.pow(b,np.arange(1,order+1))
     b = tf.keras.layers.multiply([a,b])
 
@@ -936,7 +805,8 @@ def decreasing_linear(input_shape, it_lim = 1,num_classes=10,CROP=256,order=1,ga
         NS = tf.keras.layers.Lambda(lambda z: tf.experimental.numpy.diff(z,axis=1))(NS)
         EW = tf.keras.layers.Lambda(lambda z: tf.experimental.numpy.diff(z,axis=2))(EW)
 
-        mult = gamma*tf.ones_like(NS)
+        #mult = gamma*tf.ones_like(NS)
+        mult = tf.keras.layers.Lambda(lambda z: tf.multiply(tf.cast(gamma,dtype=tf.float32),z))(tf.ones_like(NS))
         NS_mod = NS
         EW_mod = EW
 
@@ -953,7 +823,7 @@ def decreasing_linear(input_shape, it_lim = 1,num_classes=10,CROP=256,order=1,ga
 
 
 
-def get_model(arch,it_lim,image_size,typ='gaussian',var = 1,num_classes=1,CROP = 256,option = 1,order = 1,initial=True):
+def get_model(arch,it_lim,image_size,typ='gaussian',var = 1,num_classes=1,CROP = 256,option = 1,order = 1,initial=False):
 
 
     if arch == "lambdas":
