@@ -1,2 +1,2 @@
-model_checkpoint_path: "dectaylor_gaussian_5"
-all_model_checkpoint_paths: "dectaylor_gaussian_5"
+model_checkpoint_path: "declinear_gaussian_50"
+all_model_checkpoint_paths: "declinear_gaussian_50"
