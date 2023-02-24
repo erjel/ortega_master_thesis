@@ -62,7 +62,7 @@ def get_data_generator(sampler):
             x = np.expand_dims(x,axis=-1)
             y = np.expand_dims(y,axis=-1)
             if pre:
-                x[1] = tf.nn.conv2d(np.array([x[1]]),kernel,[1,1,1,1],"SAME")
+                x = tf.nn.conv2d(np.array([x]),kernel,[1,1,1,1],"SAME")[0]
             yield x,y
                     
     return get_data
