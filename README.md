@@ -26,19 +26,19 @@ and keep the information our original image had.
 On the other hand, the way I'm trying to improve this algorithm is by using neural networks, usually based in a Unet arquitecture, to find
 the function $f$ in the equation which would produce the best results in the denoising task.
 
-## Description of the folders
+## Examples
 
-What you will find in the "images" folders is the BSDS500 database witht the result of merging training and validation sets and labelling them
-as "train" and the original "test" set. I did this so I could have more images to train and becaise I can just generate as many testing images as
-I need from the corresponding pool.
+Since this is an ongoing project, it's difficult to keep examples updated.
+Nevertheless, you can see below a plot comparing PSNR and SSIM my models achieve vs the one I got just using Perona-Malik functions and the original values the corrupted images had. In them you can see how regardless of the constraints I put on my functions, using a neural network also ended up in a better performance than the classical algorithm.
 
-In order to avoid redundance on the code, I created the "scripts" folder, so I could just import my functions and architectures in the folders
-I needed.
 
-As for the "11_oct" folder, I put the different arquitectures I have been trying out, each of them producing functions with different properties,
-namely being an optimized version of a canonical function used in the Perona-Malik algorithm, being a spline (currently just order 1) or monotone decreasing.
+![Screenshot from 2023-03-06 15-20-18](https://user-images.githubusercontent.com/57953211/223136107-a069db1e-2b50-43a7-b665-9fb13deeb6af.png)
 
-Finally, the "summary_141222.pdf" is meant to give an idea of how the reconstruction process iwas going on up till 14.12.2022
+
+The figure below shows some examples of the outcomes.
+![Screenshot from 2023-03-06 15-22-43](https://user-images.githubusercontent.com/57953211/223137288-69210aa9-fb04-4c1f-92e9-73758237ec7d.png)
+
+
 
 
 ## References
