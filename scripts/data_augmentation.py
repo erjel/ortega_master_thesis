@@ -7,7 +7,7 @@ from glob import glob
 
 
 
-def augment(yx, crop=256, do_flips=True, do_rotate=True, do_scale=False):
+def augment(yx, crop=256, do_flips=True, do_rotate=True, do_scale=True):
     
     if do_flips:
         if np.random.uniform(0,1) > 0.5:
@@ -18,11 +18,12 @@ def augment(yx, crop=256, do_flips=True, do_rotate=True, do_scale=False):
                 for i in range(len(yx)):
                     yx[i] = cv2.flip(yx[i],1)
  
-    if do_rotate:
-        ch, cw = yx[0].shape[:2]
-        rotation_matrix = cv2.getRotationMatrix2D((cw/2,ch/2),np.random.randint(-90,90),1)
-        for i in range(len(yx)):
-            yx[i] = cv2.warpAffine(yx[i],rotation_matrix, (ch,cw),cv2.INTER_LINEAR, borderMode=cv2.BORDER_REFLECT)
+
+    ch, cw = yx[0].shape[:2]
+    rotation_matrix = cv2.getRotationMatrix2D((cw/2,ch/2),np.random.rand()*360*float(do_rotate),
+                            1+float(do_scale)*(np.random.uniform(-0.2,0.2)))
+    for i in range(len(yx)):
+        yx[i] = cv2.warpAffine(yx[i],rotation_matrix, (ch,cw),cv2.INTER_LINEAR, borderMode=cv2.BORDER_REFLECT)
     
     return yx
     
@@ -63,6 +64,9 @@ def get_data_generator(sampler):
             y = np.expand_dims(y,axis=-1)
             if pre:
                 x = tf.nn.conv2d(np.array([x]),kernel,[1,1,1,1],"SAME")[0]
+               
+            if same:
+                x = y
             yield x,y
                     
     return get_data
@@ -70,7 +74,7 @@ def get_data_generator(sampler):
     
     
 def get_generators(typ,var1_d,var1_u,model=0,BATCH_SIZE = 50, CROP1 = 256,pre_smoothing=False,size=5,sigma=1,
-                  training=False):
+                  training=False,autoencoder=False):
 
     test = glob('../../images/test/*.jpg')
     train = glob('../../images/train/*.jpg')
@@ -93,6 +97,9 @@ def get_generators(typ,var1_d,var1_u,model=0,BATCH_SIZE = 50, CROP1 = 256,pre_sm
     
     global train_var
     train_var = training
+    
+    global same
+    same = autoencoder
     
     if pre:
         mesh = np.meshgrid(np.arange(size),np.arange(size))

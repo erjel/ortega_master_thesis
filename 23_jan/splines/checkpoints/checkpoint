@@ -1,2 +1,2 @@
-model_checkpoint_path: "splinespre20and5_gaussian_20"
-all_model_checkpoint_paths: "splinespre20and5_gaussian_20"
+model_checkpoint_path: "splines3_gaussian_50"
+all_model_checkpoint_paths: "splines3_gaussian_50"
