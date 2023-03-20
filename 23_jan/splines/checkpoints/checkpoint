@@ -1,2 +1,2 @@
-model_checkpoint_path: "splinesits1_gaussian_10"
-all_model_checkpoint_paths: "splinesits1_gaussian_10"
+model_checkpoint_path: "splinesprobabilty_gaussian_50"
+all_model_checkpoint_paths: "splinesprobabilty_gaussian_50"

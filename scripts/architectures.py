@@ -1,7 +1,6 @@
 import tensorflow as tf
 import numpy as np
 from glob import glob
-import keras_cv
 
 def divergence_x(x):
     #return(x[:,1:]-x[:,:-1])
@@ -244,12 +243,12 @@ def splines(input_shape, it_lim = 10,num_classes=10,order1 = 1,CROP=256,gamma=1,
 def decreasing(input_shape, it_lim = 1,num_classes=10,CROP=256):
 
     inputs = tf.keras.Input(shape=input_shape,name='input')
-    input_emb = tf.keras.layers.Input(shape = (1),name='input_emb')
+    #input_emb = tf.keras.layers.Input(shape = (1),name='input_emb')
 
-    emb = tf.keras.layers.Dense(num_classes,activation='relu')(input_emb)
-    emb_initial = tf.keras.layers.Dense(1,activation = 'linear')(emb)
-    emb_initial = tf.keras.layers.Lambda(lambda z: tf.math.pow(z,2))(emb_initial)
-    emb = tf.keras.layers.Dense(num_classes,activation='sigmoid',name='embedding')(emb)
+    #emb = tf.keras.layers.Dense(num_classes,activation='relu')(input_emb)
+    #emb_initial = tf.keras.layers.Dense(1,activation = 'linear')(emb)
+    #emb_initial = tf.keras.layers.Lambda(lambda z: tf.math.pow(z,2))(emb_initial)
+    #emb = tf.keras.layers.Dense(num_classes,activation='sigmoid',name='embedding')(emb)
     x = classifier(inputs, num_classes=num_classes,CROP=CROP)
 
     y = tf.keras.layers.Flatten()(x)
@@ -261,12 +260,13 @@ def decreasing(input_shape, it_lim = 1,num_classes=10,CROP=256):
     simple = tf.keras.layers.Dense(num_classes,activation = "sigmoid")(y1)
     simple = tf.keras.layers.Lambda(lambda z:tf.stack([z for it in range(num_classes)],axis=-2))(simple)-1
     triangular = tf.linalg.LinearOperatorLowerTriangular(tf.ones_like(simple)).to_dense()
-    emb = tf.keras.layers.Lambda(lambda z:tf.stack([z for it in range(num_classes)],axis=-2))(emb)-1
-    emb = tf.keras.layers.multiply([triangular,emb])+1
-    emb = tf.keras.layers.Lambda(lambda z: tf.math.reduce_prod(z,axis=-1))(emb)
+    #emb = tf.keras.layers.Lambda(lambda z:tf.stack([z for it in range(num_classes)],axis=-2))(emb)-1
+    #emb = tf.keras.layers.multiply([triangular,emb])+1
+    #emb = tf.keras.layers.Lambda(lambda z: tf.math.reduce_prod(z,axis=-1))(emb)
     simple = tf.keras.layers.multiply([triangular,simple])+1
     simple = tf.keras.layers.Lambda(lambda z: tf.math.reduce_prod(z,axis=-1))(simple)
-    simple = tf.keras.layers.multiply([simple,initial,emb,emb_initial],name = 'simple_extract')
+    simple = tf.keras.layers.multiply([simple,initial],name = 'simple_extract')
+    #simple = tf.keras.layers.multiply([simple,initial,emb,emb_initial],name = 'simple_extract')
 
 
     partition_low = tf.constant(np.power(np.linspace(0,1,num_classes+1),2)[:-1])
@@ -340,7 +340,7 @@ def decreasing(input_shape, it_lim = 1,num_classes=10,CROP=256):
         outputs = new_outputs
 
         
-    return tf.keras.models.Model([inputs,input_emb], outputs)
+    return tf.keras.models.Model(inputs, outputs)
 
 def decreasing_taylor(input_shape, it_lim = 1,num_classes=10,CROP=256,gamma=1):
 
@@ -720,6 +720,138 @@ def autoencoder(input_shape, it_lim = 10,num_classes=10,order1 = 1,CROP=256,gamm
 
     return tf.keras.models.Model(inputs, outputs)
 
+def convex(input_shape, it_lim = 10,num_classes=10,order1 = 1,CROP=256,gamma=1,pre_smoothing=False,size=5):
+    order = order1
+
+    inputs = tf.keras.Input(shape=input_shape,name='input')
+    x = classifier(inputs, num_classes=num_classes,CROP=CROP)
+
+    y = tf.keras.layers.Flatten(name='y')(x)
+
+    partition_low = tf.constant(np.power(np.linspace(0,1,num_classes+1),1)[:-1])
+    partition_low = tf.expand_dims(tf.expand_dims(tf.expand_dims(partition_low,0),0),0)
+    partition_low = tf.cast(partition_low,tf.float32)
+    partition_up = tf.constant(np.power(np.linspace(0,1,num_classes+1),1)[1:])
+    partition_up = tf.expand_dims(tf.expand_dims(tf.expand_dims(partition_up,0),0),0)
+    partition_up = tf.cast(partition_up,tf.float32)
+
+    deltaS = tf.keras.layers.Lambda(lambda z:tf.zeros_like(z))(inputs)
+    deltaE = tf.keras.layers.Lambda(lambda z:tf.zeros_like(z))(inputs)
+    NS = tf.keras.layers.Lambda(lambda z:tf.zeros_like(z))(inputs)
+    EW = tf.keras.layers.Lambda(lambda z:tf.zeros_like(z))(inputs)
+    gS = tf.keras.layers.Lambda(lambda z:tf.ones_like(z))(inputs)
+    gE = tf.keras.layers.Lambda(lambda z:tf.ones_like(z))(inputs)
+
+
+    b_initial = tf.keras.layers.Dense(1,activation='linear')(y)
+    b_initial = tf.keras.layers.Lambda(lambda z:tf.math.pow(z,2))(b_initial)
+
+    a_initial = tf.keras.layers.Dense(1,activation='linear')(y)
+    a = tf.keras.layers.Dense(num_classes*order,activation = 'linear')(y)
+    a = tf.keras.layers.Lambda(lambda z: tf.pow(z,2))(a)
+    a = tf.keras.layers.Reshape((num_classes,order))(a)
+    a = tf.keras.layers.Lambda(lambda z: tf.cumsum(z,axis=1))(a)
+
+    b = tf.keras.layers.Lambda(lambda z:tf.multiply(np.asarray(1/num_classes,dtype=np.float32),tf.ones_like(z)))(a)
+    b = tf.pow(b,np.arange(1,order+1))
+    b = tf.keras.layers.multiply([a,b])
+
+    m = tf.linalg.LinearOperatorLowerTriangular(tf.ones(tf.shape(a)+(0,0,num_classes-1))).to_dense()
+    b = tf.keras.layers.multiply([tf.transpose(b,perm=(0,2,1)),m])
+    b = tf.keras.layers.Lambda(lambda z:tf.math.reduce_sum(z,axis=-1))(b)
+    b0 = tf.keras.layers.Lambda(lambda z:tf.expand_dims(tf.zeros_like(z[:,0]),axis=-1))(b)
+    b = tf.keras.layers.Concatenate(axis=1)([b0,b])
+    b = tf.keras.layers.Lambda(lambda z:z[:,:-1])(b)
+    b = tf.keras.layers.add((b,b_initial))
+    b = tf.expand_dims(b,axis=-1)
+
+
+    ct = tf.keras.layers.Concatenate(name='coeff_spline')((b,a))
+    ct = tf.keras.layers.Lambda(lambda z: tf.expand_dims(tf.expand_dims(z,axis=1),axis=1))(ct)
+
+    outputs = inputs
+
+    if pre_smoothing:
+        skip = tf.keras.layers.Conv2D(64,(size,size),padding='same',use_bias=False)(outputs)
+        outputs = tf.keras.layers.MaxPool2D((2,2))(skip)
+        outputs = tf.keras.layers.Conv2DTranspose(64,(2,2),strides=(2,2))(outputs)
+        outputs = tf.keras.layers.concatenate([outputs, skip])
+        outputs = tf.keras.layers.Conv2D(64,(2,2),padding='same')(outputs)
+        outputs = tf.keras.layers.Conv2D(1,(1,1), activation='sigmoid')(outputs)
+
+
+    for num_it in range(it_lim):
+
+
+        difS = tf.keras.layers.Lambda(lambda z: tf.experimental.numpy.diff(z,axis=1))(outputs)
+        difE = tf.keras.layers.Lambda(lambda z: tf.experimental.numpy.diff(z,axis=2))(outputs)
+        zeros_y = tf.expand_dims(tf.zeros_like(outputs)[:,1],axis=-1)
+        zeros_x = tf.expand_dims(tf.zeros_like(inputs)[:,1],axis=-3)
+        deltaS = tf.keras.layers.Concatenate(axis=1)([difS,zeros_x])
+        deltaE = tf.keras.layers.Concatenate(axis=2)([difE,zeros_y])
+
+        dS_n = tf.keras.layers.Lambda(lambda z: tf.math.abs(z)/tf.reduce_max(tf.math.abs(z)))(deltaS)
+        dE_n = tf.keras.layers.Lambda(lambda z: tf.math.abs(z)/tf.reduce_max(tf.math.abs(z)))(deltaE)
+
+        dS2 = tf.keras.layers.Lambda(lambda z:tf.math.pow(z,2),name=f'dx_{num_it}')(dS_n)
+        dE2 = tf.keras.layers.Lambda(lambda z:tf.math.pow(z,2))(dE_n)
+
+        ineq1_S = tf.greater_equal(dS2, partition_low)
+        ineq2_S = tf.less_equal(dS2,partition_up)
+        ineq1_E = tf.greater_equal(dE2, partition_low)
+        ineq2_E = tf.less_equal(dE2,partition_up)
+
+        interval_S = tf.cast(tf.math.logical_and(ineq1_S,ineq2_S),tf.float32)
+        interval_E = tf.cast(tf.math.logical_and(ineq1_E,ineq2_E),tf.float32)
+
+        power_norm_S = tf.pow(dS2,tf.constant(np.asarray(np.arange(1,order+1),dtype='float32')))
+        power_norm_S = tf.keras.layers.Lambda(lambda z:tf.math.mod(z,1/num_classes))(power_norm_S)
+        cte_S = tf.ones_like(inputs)
+        power_norm_S = tf.keras.layers.Concatenate(axis=-1)((cte_S,power_norm_S))
+        power_norm_S = tf.keras.layers.Lambda(lambda z: tf.expand_dims(z,axis=-2))(power_norm_S)
+        power_norm_E = tf.pow(dE2,tf.constant(np.asarray(np.arange(1,order+1),dtype='float32')))
+        power_norm_E = tf.keras.layers.Lambda(lambda z:tf.math.mod(z,1/num_classes))(power_norm_E)
+        cte_E = tf.ones_like(inputs)
+        power_norm_E = tf.keras.layers.Concatenate(axis=-1)((cte_E,power_norm_E))
+        power_norm_E = tf.keras.layers.Lambda(lambda z: tf.expand_dims(z,axis=-2))(power_norm_E)
+
+
+        spline_S = tf.keras.layers.multiply([ct,power_norm_S])
+        spline_S = tf.keras.layers.Lambda(lambda z:tf.math.reduce_sum(z,axis=-1))(spline_S)
+        spline_S = tf.keras.layers.multiply([spline_S,interval_S])
+        spline_E = tf.keras.layers.multiply([ct,power_norm_E])
+        spline_E = tf.keras.layers.Lambda(lambda z:tf.math.reduce_sum(z,axis=-1))(spline_E)
+        spline_E = tf.keras.layers.multiply([spline_E,interval_E])
+
+
+        gS = tf.keras.layers.Lambda(lambda z: tf.math.reduce_sum(z,axis=-1),name=f'gS_{num_it}')(spline_S)
+        gS = tf.expand_dims(gS,axis=-1)
+        gE = tf.keras.layers.Lambda(lambda z: tf.math.reduce_sum(z,axis=-1),name=f'gE_{num_it}')(spline_E)
+        gE = tf.expand_dims(gE,axis=-1)
+
+        E = tf.keras.layers.multiply((gE,deltaE))
+        S = tf.keras.layers.multiply((gS,deltaS))
+
+        NS = S
+        EW = E
+        NS = tf.keras.layers.Concatenate(axis=1)([zeros_x,NS])
+        EW = tf.keras.layers.Concatenate(axis=2)([zeros_y,EW])
+        NS = tf.keras.layers.Lambda(lambda z: tf.experimental.numpy.diff(z,axis=1))(NS)
+        EW = tf.keras.layers.Lambda(lambda z: tf.experimental.numpy.diff(z,axis=2))(EW)
+
+        mult = tf.keras.layers.Lambda(lambda z: tf.multiply(tf.cast(gamma,dtype=tf.float32),z))(tf.ones_like(NS))
+        NS_mod = NS
+        EW_mod = EW
+
+        adding = tf.keras.layers.add([NS,EW])
+        adding = tf.keras.layers.multiply((mult,adding))
+
+        outputs = tf.keras.layers.add([outputs,adding])
+        
+    
+        
+    return tf.keras.models.Model(inputs, outputs)
+
 
 
 
@@ -741,7 +873,11 @@ def get_model(arch,it_lim,image_size,typ='gaussian',var = 1,num_classes=1,CROP =
     if arch == "decreasing_linear":
         return decreasing_linear(image_size + (1,), it_lim = it_lim,num_classes=num_classes,CROP=CROP)
     
+    if arch == "convex":
+        return convex(image_size + (1,), it_lim = it_lim,num_classes=num_classes,CROP=CROP)
+    
     if arch == "autoencoder":
+        import keras_cv
         model = autoencoder(image_size + (1,), it_lim = it_lim,num_classes=num_classes,order1 = order,CROP=CROP)
         #model.get_layer('image_encoder').trainable = False
         return model

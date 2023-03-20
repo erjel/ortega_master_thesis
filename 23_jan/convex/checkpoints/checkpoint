@@ -1,0 +1,2 @@
+model_checkpoint_path: "decprobability_gaussian_50"
+all_model_checkpoint_paths: "decprobability_gaussian_50"
