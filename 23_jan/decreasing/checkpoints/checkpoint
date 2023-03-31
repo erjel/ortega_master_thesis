@@ -1,0 +1,2 @@
+model_checkpoint_path: "decAutoencoder_gaussian_50"
+all_model_checkpoint_paths: "decAutoencoder_gaussian_50"
