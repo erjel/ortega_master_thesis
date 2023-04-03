@@ -1,2 +1,2 @@
-model_checkpoint_path: "splinesprobabiltytt_gaussian_50"
-all_model_checkpoint_paths: "splinesprobabiltytt_gaussian_50"
+model_checkpoint_path: "fluxLinftytt_gaussian_20"
+all_model_checkpoint_paths: "fluxLinftytt_gaussian_20"
