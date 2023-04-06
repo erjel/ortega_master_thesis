@@ -29,25 +29,19 @@ def augment(yx, crop=256, do_flips=True, do_rotate=True, do_scale=True):
     
 N_REPEAT_FRAME = 1
 
-def sample_images(frame_nums,model):
+def sample_images(frame_nums):
     while True:
         try:
-            if train_var:
-                var = np.random.choice([10,20,50])
-            else:
-                #var = abs(var_u - np.random.exponential(var_d))
-                var = np.random.uniform(var_d,var_u)
+            var = np.random.choice([15,25,50])
+            var += np.random.normal(0,10)
+            var = np.clip(var,var_d,var_u)
             img = open_frame(np.random.choice(frame_nums),var,CROP)
         except Exception as e:
             print(f'Exception {e} on file')
             #continue
             break
             
-        #img = open_frame(np.random.choice(frame_nums),var,CROP)
-        r = np.random.uniform(0,1)
-        if r > 0.5:
-            if model != 0:
-                img[1] = np.squeeze(model(np.array([np.expand_dims(img[1],axis=-1)])))
+        
             
         for n in range(N_REPEAT_FRAME):
             
@@ -62,8 +56,6 @@ def get_data_generator(sampler):
             x,y = yx[1],yx[0]
             x = np.expand_dims(x,axis=-1)
             y = np.expand_dims(y,axis=-1)
-            if pre:
-                x = tf.nn.conv2d(np.array([x]),kernel,[1,1,1,1],"SAME")[0]
                
             if same:
                 x = y
@@ -73,7 +65,7 @@ def get_data_generator(sampler):
 
     
     
-def get_generators(typ,var1_d,var1_u,model=0,BATCH_SIZE = 50, CROP1 = 256,pre_smoothing=False,size=5,sigma=1,
+def get_generators(typ,var1_d,var1_u,BATCH_SIZE = 50, CROP1 = 256,
                   training=False,autoencoder=False):
 
     test = glob('../../images/test/*.jpg')
@@ -91,35 +83,20 @@ def get_generators(typ,var1_d,var1_u,model=0,BATCH_SIZE = 50, CROP1 = 256,pre_sm
 
     global CROP
     CROP = CROP1
-    
-    global pre
-    pre = pre_smoothing
-    
-    global train_var
-    train_var = training
+
     
     global same
     same = autoencoder
     
-    if pre:
-        mesh = np.meshgrid(np.arange(size),np.arange(size))
-        center = size//2
-        kernel1 = (np.power(mesh[0] - center,2) + np.power(mesh[1] - center,2))
-        kernel1 = np.exp(-kernel1/(4*sigma))
-        kernel1 = kernel1/(4*np.pi*sigma)
-        kernel1 = np.expand_dims(np.expand_dims(kernel1,-1),-1)
-        
-        global kernel
-        kernel = kernel1
     
 
     dg_train = tf.data.Dataset.from_generator(
-        get_data_generator(sample_images(train,model)),
+        get_data_generator(sample_images(train)),
         output_types=(tf.float32, tf.float32),
         output_shapes=((CROP, CROP, 1),(CROP, CROP, 1)) )
 
     dg_val = tf.data.Dataset.from_generator(
-        get_data_generator(sample_images(test,model)),
+        get_data_generator(sample_images(test)),
         output_types=(tf.float32, tf.float32),
         output_shapes=((CROP, CROP, 1),(CROP, CROP, 1)) )
 

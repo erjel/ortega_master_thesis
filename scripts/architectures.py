@@ -101,9 +101,9 @@ def make_embedding(input_shape,kernel_size=3,pool_size=3,CROP=256):
     x = tf.keras.layers.GlobalAveragePooling2D()(x)
     
     embedding =  tf.keras.Model(inputs,x)
-    embedding.load_weights('/home/joel/master_thesis/23_jan/border/checkpoints/embedding')
+    embedding.load_weights('/home/joel/nmr-storage/fly_group_behavior/scripts/PeronaMalik/thesis/23_jan/border/checkpoints/embedding')
     
-    for layer in embedding.layers:
+    for layer in embedding.layers[:-4]:
         layer.trainable = False
     
     return embedding
@@ -160,7 +160,7 @@ def make_boundary_detector(inp):
 
 def get_boundary_detector(CROP):
     border = make_boundary_detector(tf.keras.layers.Input(shape=(CROP,CROP, 1)))
-    border.load_weights(f"/home/joel/master_thesis/23_jan/border/checkpoints/borders_gaussian")
+    border.load_weights(f"/home/joel/nmr-storage/fly_group_behavior/scripts/PeronaMalik/thesis/23_jan/border/checkpoints/borders_gaussian")
 
     for layer in border.layers:
         layer.trainable = False
@@ -353,17 +353,26 @@ def get_model(arch,it_lim,image_size,typ='gaussian',num_classes=1,CROP = 256,ord
         if boundary_detector:
             deltaS = boundary(outputs)
             deltaE = boundary(outputs)
-            
+
+            dS_n = tf.keras.layers.Lambda(lambda z: tf.math.sqrt(z))(deltaS)
+            dE_n = tf.keras.layers.Lambda(lambda z: tf.math.sqrt(z))(deltaE)
+
         else:
- 
+
             difS = tf.keras.layers.Lambda(lambda z: tf.experimental.numpy.diff(z,axis=1))(outputs)
             difE = tf.keras.layers.Lambda(lambda z: tf.experimental.numpy.diff(z,axis=2))(outputs)
             deltaS = tf.keras.layers.Concatenate(axis=1)([difS,zeros_x])
             deltaE = tf.keras.layers.Concatenate(axis=2)([difE,zeros_y])
+            deltaS = tf.keras.layers.Lambda(lambda z: tf.math.abs(z))(deltaS)
+            deltaE = tf.keras.layers.Lambda(lambda z: tf.math.abs(z))(deltaE)
+
+
+            dS_n = deltaS
+            dE_n = deltaE
 
         
-        dS_n = tf.keras.layers.Lambda(lambda z: tf.math.sqrt(z))(deltaS)
-        dE_n = tf.keras.layers.Lambda(lambda z: tf.math.sqrt(z))(deltaE)
+        #dS_n = tf.keras.layers.Lambda(lambda z: tf.math.sqrt(z))(deltaS)
+        #dE_n = tf.keras.layers.Lambda(lambda z: tf.math.sqrt(z))(deltaE)
 
         dS2 = tf.keras.layers.Lambda(lambda z:tf.math.pow(z,2),name=f'dx_{num_it}')(dS_n)
         dE2 = tf.keras.layers.Lambda(lambda z:tf.math.pow(z,2))(dE_n)
