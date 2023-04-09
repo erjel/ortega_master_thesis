@@ -101,7 +101,10 @@ def make_embedding(input_shape,kernel_size=3,pool_size=3,CROP=256):
     x = tf.keras.layers.GlobalAveragePooling2D()(x)
     
     embedding =  tf.keras.Model(inputs,x)
-    embedding.load_weights('/home/joel/nmr-storage/fly_group_behavior/scripts/PeronaMalik/thesis/23_jan/border/checkpoints/embedding')
+    try:
+    	embedding.load_weights('/home/joel/nmr-storage/fly_group_behavior/scripts/PeronaMalik/thesis/23_jan/border/checkpoints/embedding')
+    except:
+    	embedding.load_weights('/home/joel/thesis/23_jan/border/checkpoints/embedding')
     
     for layer in embedding.layers[:-4]:
         layer.trainable = False
@@ -160,7 +163,10 @@ def make_boundary_detector(inp):
 
 def get_boundary_detector(CROP):
     border = make_boundary_detector(tf.keras.layers.Input(shape=(CROP,CROP, 1)))
-    border.load_weights(f"/home/joel/nmr-storage/fly_group_behavior/scripts/PeronaMalik/thesis/23_jan/border/checkpoints/borders_gaussian")
+    try:
+    	border.load_weights(f"/home/joel/nmr-storage/fly_group_behavior/scripts/PeronaMalik/thesis/23_jan/border/checkpoints/borders_gaussian")
+    except:
+    	border.load_weights('/home/joel/thesis/23_jan/border/checkpoints/borders_gaussian')
 
     for layer in border.layers:
         layer.trainable = False
@@ -301,29 +307,29 @@ class function_type:
         return a,b
 
 
+def regularizer(x):
+    return 1e-5 * tf.reduce_sum(tf.pow(tf.abs(x),1/2)) + 1e-4*tf.reduce_sum(tf.abs(x))
+    
 
-
-
-def get_model(arch,it_lim,image_size,typ='gaussian',num_classes=1,CROP = 256,order = 1,gamma=1,with_embedding = True, boundary_detector=True):
+def get_model(arch,it_lim,image_size,typ='gaussian',num_classes=1,CROP = 256,order = 1,gamma=1,second=True,degree=3):
 
 
     input_shape = image_size + (1,)
     
     
     inputs = tf.keras.Input(shape=input_shape,name='input')
-    
-    if with_embedding:
-        x = make_embedding(input_shape)(inputs)
-    else:
-        x = classifier(inputs, num_classes=num_classes,CROP=CROP)
-    
+
+    x = classifier(inputs, num_classes=num_classes,CROP=CROP)
     y = tf.keras.layers.Flatten(name='y')(x)
-    
     a,b = getattr(function_type,arch)(y,num_classes,order)
-    
+    if second:
+        diff_op_coeffs = tf.keras.layers.Dense(np.sum(2**np.arange(1,degree+1)),activity_regularizer=regularizer,
+                                              name='diff_op_coeffs')(y)
+
+
     if arch == 'flux':
         num_classes = 2*num_classes
-    
+
 
     partition_low = tf.constant(np.power(np.linspace(0,1,num_classes+1),1)[:-1])
     partition_low = tf.expand_dims(tf.expand_dims(tf.expand_dims(partition_low,0),0),0)
@@ -333,100 +339,76 @@ def get_model(arch,it_lim,image_size,typ='gaussian',num_classes=1,CROP = 256,ord
     partition_up = tf.cast(partition_up,tf.float32)
 
 
-    
-
-
     ct = tf.keras.layers.Concatenate(name='coeff_spline')((b,a))
     ct = tf.keras.layers.Lambda(lambda z: tf.expand_dims(tf.expand_dims(z,axis=1),axis=1))(ct)
 
     outputs = inputs
-    
-    if boundary_detector:
-        boundary = get_boundary_detector(CROP)
- 
+
 
     for num_it in range(it_lim):
-        
-        zeros_y = tf.expand_dims(tf.zeros_like(outputs)[:,1],axis=-1)
-        zeros_x = tf.expand_dims(tf.zeros_like(inputs)[:,1],axis=-3)
-        
-        if boundary_detector:
-            deltaS = boundary(outputs)
-            deltaE = boundary(outputs)
 
-            dS_n = tf.keras.layers.Lambda(lambda z: tf.math.sqrt(z))(deltaS)
-            dE_n = tf.keras.layers.Lambda(lambda z: tf.math.sqrt(z))(deltaE)
+
+        if second:
+            diff_op,last = [],[outputs]
+            for d in range(degree):
+                last_it = []
+                for l in last:
+                    iteration = tf.keras.layers.Lambda(lambda z:tf.image.image_gradients(z))(l)
+                    diff_op.append(iteration[0])
+                    diff_op.append(iteration[1])
+                    last_it.append(iteration[0])
+                    last_it.append(iteration[1])
+
+                last = last_it
+
+            diff_op = tf.keras.layers.Concatenate()(diff_op)
+            diff_op = tf.keras.layers.Lambda(lambda z: tf.math.pow(z,2))(diff_op)
+            diff_op = tf.keras.layers.multiply((diff_op_coeffs,diff_op))
+            diff_op = tf.keras.layers.Lambda(lambda z:tf.unstack(z,axis=-1))(diff_op)
+            diff_op = tf.keras.layers.add(diff_op)
+            diff_op = tf.keras.layers.Lambda(lambda z:tf.expand_dims(z,axis=-1))(diff_op)
 
         else:
-
-            difS = tf.keras.layers.Lambda(lambda z: tf.experimental.numpy.diff(z,axis=1))(outputs)
-            difE = tf.keras.layers.Lambda(lambda z: tf.experimental.numpy.diff(z,axis=2))(outputs)
-            deltaS = tf.keras.layers.Concatenate(axis=1)([difS,zeros_x])
-            deltaE = tf.keras.layers.Concatenate(axis=2)([difE,zeros_y])
-            deltaS = tf.keras.layers.Lambda(lambda z: tf.math.abs(z))(deltaS)
-            deltaE = tf.keras.layers.Lambda(lambda z: tf.math.abs(z))(deltaE)
+            dS_n,dE_n = tf.keras.layers.Lambda(lambda z: tf.image.image_gradients(z))(outputs)
+            dS = tf.keras.layers.Lambda(lambda z: tf.pow(z,2))(dS_n)
+            dE = tf.keras.layers.Lambda(lambda z: tf.pow(z,2))(dE_n)
+            diff_op = tf.keras.layers.add((dS,dE))
 
 
-            dS_n = deltaS
-            dE_n = deltaE
 
-        
-        #dS_n = tf.keras.layers.Lambda(lambda z: tf.math.sqrt(z))(deltaS)
-        #dE_n = tf.keras.layers.Lambda(lambda z: tf.math.sqrt(z))(deltaE)
+        ineq1 = tf.greater_equal(diff_op, partition_low)
+        ineq2 = tf.less_equal(diff_op,partition_up)
 
-        dS2 = tf.keras.layers.Lambda(lambda z:tf.math.pow(z,2),name=f'dx_{num_it}')(dS_n)
-        dE2 = tf.keras.layers.Lambda(lambda z:tf.math.pow(z,2))(dE_n)
+        interval = tf.cast(tf.math.logical_and(ineq1,ineq2),tf.float32)
 
-        ineq1_S = tf.greater_equal(dS2, partition_low)
-        ineq2_S = tf.less_equal(dS2,partition_up)
-        ineq1_E = tf.greater_equal(dE2, partition_low)
-        ineq2_E = tf.less_equal(dE2,partition_up)
+        power_norm = tf.constant(np.asarray(np.arange(1,order+1),dtype='float32'))
+        power_norm = tf.keras.layers.Lambda(lambda z:tf.pow(z[0],z[1]))([diff_op,power_norm])
+        cte = tf.ones_like(inputs)
+        power_norm = tf.keras.layers.Concatenate(axis=-1)((cte,power_norm))
+        power_norm = tf.keras.layers.Lambda(lambda z: tf.expand_dims(z,axis=-2))(power_norm)
 
-        interval_S = tf.cast(tf.math.logical_and(ineq1_S,ineq2_S),tf.float32)
-        interval_E = tf.cast(tf.math.logical_and(ineq1_E,ineq2_E),tf.float32)
+        spline = tf.keras.layers.multiply([ct,power_norm])
+        spline = tf.keras.layers.Lambda(lambda z:tf.math.reduce_sum(z,axis=-1))(spline)
+        spline = tf.keras.layers.multiply([spline,interval])
 
-        power_norm_S = tf.pow(dS2,tf.constant(np.asarray(np.arange(1,order+1),dtype='float32')))
-        power_norm_S = tf.keras.layers.Lambda(lambda z:tf.math.mod(z,1/num_classes))(power_norm_S)
-        cte_S = tf.ones_like(inputs)
-        power_norm_S = tf.keras.layers.Concatenate(axis=-1)((cte_S,power_norm_S))
-        power_norm_S = tf.keras.layers.Lambda(lambda z: tf.expand_dims(z,axis=-2))(power_norm_S)
-        power_norm_E = tf.pow(dE2,tf.constant(np.asarray(np.arange(1,order+1),dtype='float32')))
-        power_norm_E = tf.keras.layers.Lambda(lambda z:tf.math.mod(z,1/num_classes))(power_norm_E)
-        cte_E = tf.ones_like(inputs)
-        power_norm_E = tf.keras.layers.Concatenate(axis=-1)((cte_E,power_norm_E))
-        power_norm_E = tf.keras.layers.Lambda(lambda z: tf.expand_dims(z,axis=-2))(power_norm_E)
-
-        
-        spline_S = tf.keras.layers.multiply([ct,power_norm_S])
-        spline_S = tf.keras.layers.Lambda(lambda z:tf.math.reduce_sum(z,axis=-1))(spline_S)
-        spline_S = tf.keras.layers.multiply([spline_S,interval_S])
-        spline_E = tf.keras.layers.multiply([ct,power_norm_E])
-        spline_E = tf.keras.layers.Lambda(lambda z:tf.math.reduce_sum(z,axis=-1))(spline_E)
-        spline_E = tf.keras.layers.multiply([spline_E,interval_E])
+        g = tf.keras.layers.Lambda(lambda z: tf.math.reduce_sum(z,axis=-1),name=f'g_{num_it}')(spline)
+        g = tf.expand_dims(g,axis=-1)
 
 
-        gS = tf.keras.layers.Lambda(lambda z: tf.math.reduce_sum(z,axis=-1),name=f'gS_{num_it}')(spline_S)
-        gS = tf.expand_dims(gS,axis=-1)
-        gE = tf.keras.layers.Lambda(lambda z: tf.math.reduce_sum(z,axis=-1),name=f'gE_{num_it}')(spline_E)
-        gE = tf.expand_dims(gE,axis=-1)
-        
-        difS = tf.keras.layers.Lambda(lambda z: tf.experimental.numpy.diff(z,axis=1))(outputs)
-        difE = tf.keras.layers.Lambda(lambda z: tf.experimental.numpy.diff(z,axis=2))(outputs)
-        deltaS = tf.keras.layers.Concatenate(axis=1)([difS,zeros_x])
-        deltaE = tf.keras.layers.Concatenate(axis=2)([difE,zeros_y])
-        E = tf.keras.layers.multiply((gE,deltaE))
-        S = tf.keras.layers.multiply((gS,deltaS))
+        deltaS,deltaE = tf.keras.layers.Lambda(lambda z: tf.image.image_gradients(z))(outputs)
+        E = tf.keras.layers.multiply((g,deltaE))
+        S = tf.keras.layers.multiply((g,deltaS))
 
         NS = S
         EW = E
+        zeros_y = tf.expand_dims(tf.zeros_like(outputs)[:,1],axis=-1)
+        zeros_x = tf.expand_dims(tf.zeros_like(inputs)[:,1],axis=-3)
         NS = tf.keras.layers.Concatenate(axis=1)([zeros_x,NS])
         EW = tf.keras.layers.Concatenate(axis=2)([zeros_y,EW])
         NS = tf.keras.layers.Lambda(lambda z: tf.experimental.numpy.diff(z,axis=1))(NS)
         EW = tf.keras.layers.Lambda(lambda z: tf.experimental.numpy.diff(z,axis=2))(EW)
 
         mult = tf.keras.layers.Lambda(lambda z: tf.multiply(tf.cast(gamma,dtype=tf.float32),z))(tf.ones_like(NS))
-        NS_mod = NS
-        EW_mod = EW
 
         adding = tf.keras.layers.add([NS,EW])
         adding = tf.keras.layers.multiply((mult,adding))

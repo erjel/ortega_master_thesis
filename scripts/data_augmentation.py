@@ -27,24 +27,25 @@ def augment(yx, crop=256, do_flips=True, do_rotate=True, do_scale=True):
     
     return yx
     
-N_REPEAT_FRAME = 1
+#N_REPEAT_FRAME = N_REPEAT_FRAME
 
 def sample_images(frame_nums):
     while True:
+        """
         try:
-            var = np.random.choice([15,25,50])
-            var += np.random.normal(0,10)
-            var = np.clip(var,var_d,var_u)
+            var = np.random.uniform(var_d,var_u)
             img = open_frame(np.random.choice(frame_nums),var,CROP)
         except Exception as e:
             print(f'Exception {e} on file')
             #continue
             break
-            
-        
+        """
+        chosen_image = np.random.choice(frame_nums)
             
         for n in range(N_REPEAT_FRAME):
             
+            var = np.random.uniform(var_d,var_u)
+            img = open_frame(chosen_image,var,CROP)
             a =  augment(np.copy(img),crop = CROP)
             yield a
             
@@ -66,7 +67,7 @@ def get_data_generator(sampler):
     
     
 def get_generators(typ,var1_d,var1_u,BATCH_SIZE = 50, CROP1 = 256,
-                  training=False,autoencoder=False):
+                  training=False,autoencoder=False,N_REPEAT_FRAME1=1):
 
     test = glob('../../images/test/*.jpg')
     train = glob('../../images/train/*.jpg')
@@ -84,9 +85,11 @@ def get_generators(typ,var1_d,var1_u,BATCH_SIZE = 50, CROP1 = 256,
     global CROP
     CROP = CROP1
 
-    
     global same
     same = autoencoder
+    
+    global N_REPEAT_FRAME
+    N_REPEAT_FRAME = N_REPEAT_FRAME1
     
     
 
