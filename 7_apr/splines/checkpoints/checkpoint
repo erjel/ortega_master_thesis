@@ -1,0 +1,2 @@
+model_checkpoint_path: "fitting_pline"
+all_model_checkpoint_paths: "fitting_pline"
