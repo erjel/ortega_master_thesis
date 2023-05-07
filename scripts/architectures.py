@@ -2,6 +2,7 @@ import tensorflow as tf
 import numpy as np
 from glob import glob
 import sys
+import os
 sys.path.append('../')
 
 def divergence_x(x):
@@ -229,7 +230,8 @@ class function_type:
 
         a = tf.keras.layers.Dense(num_classes*order,activation = 'linear')(y)
         a = tf.keras.layers.Reshape((num_classes,order))(a)
-        s0 = tf.keras.layers.Dense(1,activation='sigmoid')(y)
+        #s0 = tf.keras.layers.Dense(1,activation='sigmoid')(y)
+        s0 = tf.keras.layers.Lambda(lambda z: 0.5*tf.ones_like(z))(b_initial)
 
         b = tf.keras.layers.Lambda(lambda z:tf.multiply(np.asarray(1/num_classes,dtype=np.float32),tf.ones_like(z)))(a)
         b = tf.keras.layers.multiply((b,s0))
@@ -306,9 +308,6 @@ class function_type:
         return a,b
 
 
-#def regularizer(x):
-#    return factor1 * tf.reduce_sum(tf.pow(tf.abs(x),1/2)) + factor2*tf.reduce_sum(tf.abs(x))
- 
 def constraint(W):
     or_shape = W.shape
     shift = (2*degree+2)*((2*degree+1)//2)
@@ -347,42 +346,20 @@ def regularizer(w):
     
     return factor1 * initial
 
-def differential_operator(input_shape,num_filters,polynomial_degree,use_polynomial = False):
+def differential_operator(input_shape,num_filters,polynomial_degree):
     outputs = tf.keras.Input(shape=input_shape,name='input_differential')
     diff_op1 = tf.keras.layers.Conv2D(num_filters,(2*degree+1,2*degree+1),padding='same',use_bias=False,
                         kernel_constraint=constraint,kernel_regularizer = regularizer, name='diff')(outputs)
-    if use_polynomial:
-        polynomial = []
-        for power in range(polynomial_degree):
-            polynomial.append(tf.keras.layers.Lambda(lambda z: tf.pow(tf.abs(z),power))(diff_op1))
-
-        diff_op = tf.keras.layers.Concatenate()(polynomial)
-        
-    
-    else:
-        diff_op1 = tf.keras.layers.Lambda(lambda z: tf.pow(z,2))(diff_op1)
-        diff_op = tf.keras.layers.Conv2D(1,1,padding='same',use_bias=False,kernel_initializer='ones',
-                                        name='no_train')(diff_op1)
-        diff_op.trainable = False
+    diff_op1 = tf.keras.layers.Lambda(lambda z: tf.pow(z,2))(diff_op1)
+    diff_op = tf.keras.layers.Conv2D(1,1,padding='same',name='no_train',activation='sigmoid')(diff_op1)
 
     return tf.keras.Model(outputs,diff_op)
 
-def reducing_polynomial(y,CROP,num_filters,polynomial_degree):
-    input_y = tf.keras.Input(shape=(y.shape[1]))
-    input_z = tf.keras.Input(shape=(CROP,CROP,num_filters*polynomial_degree))
-    input_y1 = tf.keras.layers.Lambda(lambda z: tf.expand_dims(tf.expand_dims(z,axis=1),axis=1))(input_y)
-    diff_mod_coeff = tf.keras.layers.Dense(num_filters*polynomial_degree)(input_y1)
-    poly = tf.keras.layers.multiply((diff_mod_coeff,input_z))
-    diff_op = tf.keras.layers.Conv2D(1,1,padding='same',use_bias=False,kernel_initializer='ones',
-                                    name='no_train')(poly)
-    diff_op.trainable = False
-    
-    return tf.keras.Model([input_y,input_z],diff_op)
 
     
 
 def get_model(arch,it_lim,image_size,typ='gaussian',num_classes=1,CROP = 256,order = 1,gamma=1,second=True,degree1=3,
-             factor=1,polynomial_degree=3,use_polynomial=False):
+             factor=1):
 
     global factor1
     factor1 = factor
@@ -393,7 +370,21 @@ def get_model(arch,it_lim,image_size,typ='gaussian',num_classes=1,CROP = 256,ord
     input_shape = image_size + (1,)   
     if second:
         num_filters = np.sum(2**np.arange(1,degree+1))
-        differential_model = differential_operator(input_shape,num_filters,polynomial_degree,use_polynomial=use_polynomial)
+        differential_model = differential_operator(input_shape,num_filters,degree)
+        
+        current_path = os.getcwd()
+        current_path = current_path.split('/')[:-2]
+        location = os.path.join('',current_path[0])
+        for c in current_path[1:]:
+            location = os.path.join(location,c)
+
+        location = os.path.join(location,'7_apr/general/checkpoints')
+        
+        
+        differential_model.load_weights(f'/{location}/DifferentialClassifier_{degree}')
+            
+        for layer in differential_model.layers:
+            layer.trainable = False
 
 
     inputs = tf.keras.Input(shape=input_shape,name='input')
@@ -404,8 +395,6 @@ def get_model(arch,it_lim,image_size,typ='gaussian',num_classes=1,CROP = 256,ord
     if arch == 'flux':
         num_classes = 2*num_classes
 
-    if second and use_polynomial:
-            reduce_polynomial = reducing_polynomial(y,CROP,num_filters,polynomial_degree)
 
     partition_low = tf.constant(np.power(np.linspace(0,1,num_classes+1),1)[:-1])
     partition_low = tf.expand_dims(tf.expand_dims(tf.expand_dims(partition_low,0),0),0)
@@ -426,9 +415,7 @@ def get_model(arch,it_lim,image_size,typ='gaussian',num_classes=1,CROP = 256,ord
 
         if second:            
             diff_op = differential_model(outputs)
-            if use_polynomial:
-                diff_op = reduce_polynomial([y,diff_op])
-                
+
             diff_op = tf.keras.layers.Lambda(lambda z: tf.pow(z,2))(diff_op)
 
         else:
