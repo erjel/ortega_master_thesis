@@ -306,6 +306,90 @@ class function_type:
         b = tf.keras.layers.Concatenate(axis=1)((b_pos,b_neg))
 
         return a,b
+    
+    def fluxdecreasing(y,num_classes,order):
+        b_initial = tf.keras.layers.Dense(1,activation='linear')(y)
+        b_initial = tf.keras.layers.Lambda(lambda z:tf.math.pow(z,2))(b_initial)
+
+        a = tf.keras.layers.Dense(num_classes*order,activation = 'linear')(y)
+        a = tf.keras.layers.Reshape((num_classes,order))(a)
+        a = tf.keras.layers.Lambda(lambda z:-tf.math.pow(z,2))(a)
+        s0 = tf.keras.layers.Lambda(lambda z: 0.5*tf.ones_like(z))(b_initial)
+
+        b = tf.keras.layers.Lambda(lambda z:tf.multiply(np.asarray(1/num_classes,dtype=np.float32),tf.ones_like(z)))(a)
+        b = tf.keras.layers.multiply((b,s0))
+        b = tf.pow(b,np.arange(1,order+1))
+        b = tf.keras.layers.multiply([a,b])
+
+        m = tf.linalg.LinearOperatorLowerTriangular(tf.ones(tf.shape(a)+(0,0,num_classes-1))).to_dense()
+        b = tf.keras.layers.multiply([tf.transpose(b,perm=(0,2,1)),m])
+        b = tf.keras.layers.Lambda(lambda z:tf.math.reduce_sum(z,axis=-1))(b)
+        b0 = tf.keras.layers.Lambda(lambda z:tf.expand_dims(tf.zeros_like(z[:,0]),axis=-1))(b)
+        b = tf.keras.layers.Concatenate(axis=1)([b0,b])
+        b = tf.keras.layers.Lambda(lambda z:z[:,:-1])(b)
+        b = tf.keras.layers.add((b,b_initial))
+        b = tf.expand_dims(b,axis=-1)
+
+
+        minimum = tf.ones_like(a)/(num_classes)
+        fun = tf.keras.layers.multiply((s0,minimum,a))
+        fun = tf.keras.layers.add((fun,b))
+        coeffs = 2*(tf.cumsum(tf.ones_like(a)/(num_classes),axis=1))
+        coeffs = tf.keras.layers.multiply((coeffs,s0,a))
+        fun = tf.keras.layers.add((coeffs,fun))
+        minimum = tf.keras.layers.Lambda(lambda z:-tf.reduce_min(z[...,0],axis=-1))(fun)
+        minimum_neg = tf.keras.layers.Lambda(lambda z: tf.cast(tf.less_equal(-z,0),dtype=tf.float32))(minimum)
+        minimum = tf.keras.layers.multiply((minimum,minimum_neg))
+
+        b = tf.keras.layers.add((b,minimum))
+
+        a_pos,b_pos = a,b
+
+        b_middle = tf.keras.layers.Dense(1,activation='linear')(y)
+        b_middle = tf.keras.layers.Lambda(lambda z:tf.math.pow(z,2))(b_middle)
+
+
+        a = tf.keras.layers.Dense(num_classes*order,activation = 'linear')(y)
+        a = tf.keras.layers.Reshape((num_classes,order))(a)
+        a = tf.keras.layers.Lambda(lambda z:-tf.math.pow(z,2))(a)
+        s1 = tf.keras.layers.Lambda(lambda z: tf.ones_like(z)-z)(s0)
+
+        b = tf.keras.layers.Lambda(lambda z:tf.multiply(np.asarray(1/num_classes,dtype=np.float32),tf.ones_like(z)))(a)
+        b = tf.keras.layers.multiply((b,s1))
+        b = tf.pow(b,np.arange(1,order+1))
+        b = tf.keras.layers.multiply([a,b])
+
+        m = tf.linalg.LinearOperatorLowerTriangular(tf.ones(tf.shape(a)+(0,0,num_classes-1))).to_dense()
+        b = tf.keras.layers.multiply([tf.transpose(b,perm=(0,2,1)),m])
+        b = tf.keras.layers.Lambda(lambda z:tf.math.reduce_sum(z,axis=-1))(b)
+        b0 = tf.keras.layers.Lambda(lambda z:tf.expand_dims(tf.zeros_like(z[:,0]),axis=-1))(b)
+        b = tf.keras.layers.Concatenate(axis=1)([b0,b])
+        b = tf.keras.layers.Lambda(lambda z:z[:,:-1])(b)
+        b = tf.keras.layers.add((b,b_middle))
+        b = tf.expand_dims(b,axis=-1)
+
+
+        maximum = tf.ones_like(a)/(num_classes)
+        fun = tf.keras.layers.multiply((s1,maximum,a))
+        fun = tf.keras.layers.add((fun,b))
+        coeffs = 2*(tf.cumsum(tf.ones_like(a)/(num_classes),axis=1))
+        coeffs = tf.keras.layers.multiply((coeffs,s1))
+        coeffs = tf.keras.layers.add((coeffs,s0))
+        coeffs = tf.keras.layers.multiply((a,coeffs))
+        fun = tf.keras.layers.add((coeffs,fun))
+        maximum = tf.keras.layers.Lambda(lambda z:-tf.reduce_max(z[...,0],axis=-1))(fun)
+        maximum_neg = tf.keras.layers.Lambda(lambda z: tf.cast(tf.greater_equal(-z,0),dtype=tf.float32))(maximum)
+        maximum = tf.keras.layers.multiply((maximum,maximum_neg))
+        maximum = tf.keras.layers.Lambda(lambda z:tf.expand_dims(z,axis=-1))(maximum)
+
+        b = tf.keras.layers.add((b,maximum))
+
+        a_neg,b_neg = a,b
+
+        a = tf.keras.layers.Concatenate(axis=1)((a_pos,a_neg))
+        b = tf.keras.layers.Concatenate(axis=1)((b_pos,b_neg))
+
+        return a,b
 
 
 def constraint(W):
@@ -383,8 +467,8 @@ def get_model(arch,it_lim,image_size,typ='gaussian',num_classes=1,CROP = 256,ord
         
         differential_model.load_weights(f'/{location}/DifferentialClassifier_{degree}')
             
-        for layer in differential_model.layers:
-            layer.trainable = False
+        #for layer in differential_model.layers:
+        #    layer.trainable = False
 
 
     inputs = tf.keras.Input(shape=input_shape,name='input')
@@ -392,7 +476,7 @@ def get_model(arch,it_lim,image_size,typ='gaussian',num_classes=1,CROP = 256,ord
     y = tf.keras.layers.Flatten(name='y')(x)
     a,b = getattr(function_type,arch)(y,num_classes,order)    
     b = tf.keras.layers.Lambda(lambda z: tf.multiply(tf.ones_like(z[0]),z[1]))([a,b])
-    if arch == 'flux':
+    if 'flux' in arch:
         num_classes = 2*num_classes
 
 
