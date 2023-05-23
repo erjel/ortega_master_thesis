@@ -430,12 +430,29 @@ def regularizer(w):
     
     return factor1 * initial
 
-def differential_operator(input_shape,num_filters,polynomial_degree):
+def differential_operator(input_shape,num_filters,polynomial_degree,typee):
     outputs = tf.keras.Input(shape=input_shape,name='input_differential')
-    diff_op1 = tf.keras.layers.Conv2D(num_filters,(2*degree+1,2*degree+1),padding='same',use_bias=False,
-                        kernel_constraint=constraint,kernel_regularizer = regularizer, name='diff')(outputs)
+    if (typee == 'diffop') or (typee == 'nopretrained'):
+        diff_op1 = tf.keras.layers.Conv2D(num_filters,(2*degree+1,2*degree+1),padding='same',use_bias=False,
+                            kernel_constraint=constraint,kernel_regularizer = regularizer, name='diff')(outputs)
+    if (typee != 'diffop') and (typee != 'nopretrained'):
+        diff_op1 = tf.keras.layers.Conv2D(num_filters,(2*degree+1,2*degree+1),padding='same',use_bias=False,name='diff')(outputs)
+    
     diff_op1 = tf.keras.layers.Lambda(lambda z: tf.pow(z,2))(diff_op1)
-    diff_op = tf.keras.layers.Conv2D(1,1,padding='same',name='no_train',activation='sigmoid')(diff_op1)
+    
+    if typee != 'foe':
+        diff_op = tf.keras.layers.Conv2D(1,1,padding='same',name='no_train',activation='sigmoid')(diff_op1)
+    if typee == 'foe':
+        diff_op = tf.keras.layers.Conv2D(1,1,padding='same',name='no_train')(diff_op1)
+        diff_op = tf.keras.layers.Dense(64,activation = 'relu')(diff_op)
+        diff_op = tf.keras.layers.Dense(32,activation = 'relu')(diff_op)
+        diff_op = tf.keras.layers.Dense(1,activation = 'relu')(diff_op)
+        
+    if typee == 'foek':
+        diff_op = tf.keras.layers.Conv2D(1,5,padding='same',name='no_train')(diff_op1)
+        diff_op = tf.keras.layers.Dense(64,activation = 'relu')(diff_op)
+        diff_op = tf.keras.layers.Dense(32,activation = 'relu')(diff_op)
+        diff_op = tf.keras.layers.Dense(1,activation = 'relu')(diff_op)
 
     return tf.keras.Model(outputs,diff_op)
 
@@ -443,7 +460,7 @@ def differential_operator(input_shape,num_filters,polynomial_degree):
     
 
 def get_model(arch,it_lim,image_size,typ='gaussian',num_classes=1,CROP = 256,order = 1,gamma=1,second=True,degree1=3,
-             factor=1):
+             factor=1,typee='noconstraints'):
 
     global factor1
     factor1 = factor
@@ -452,20 +469,15 @@ def get_model(arch,it_lim,image_size,typ='gaussian',num_classes=1,CROP = 256,ord
     degree = degree1
 
     input_shape = image_size + (1,)   
-    if second:
+    if typee != 'classic':
         num_filters = np.sum(2**np.arange(1,degree+1))
-        differential_model = differential_operator(input_shape,num_filters,degree)
+        differential_model = differential_operator(input_shape,num_filters,degree,typee)
         
-        current_path = os.getcwd()
-        current_path = current_path.split('/')[:-2]
-        location = os.path.join('',current_path[0])
-        for c in current_path[1:]:
-            location = os.path.join(location,c)
-
-        location = os.path.join(location,'7_apr/general/checkpoints')
+        if typee == 'diffop':
+            
+            location = '/home/joel/nmr-storage/fly_group_behavior/scripts/PeronaMalik/thesis/7_apr/general/checkpoints'
         
-        
-        differential_model.load_weights(f'/{location}/DifferentialClassifier_{degree}')
+            differential_model.load_weights(f'/{location}/DifferentialClassifier_{degree}')
             
         #for layer in differential_model.layers:
         #    layer.trainable = False
@@ -497,7 +509,7 @@ def get_model(arch,it_lim,image_size,typ='gaussian',num_classes=1,CROP = 256,ord
     for num_it in range(it_lim):
 
 
-        if second:            
+        if typee != 'classic':            
             diff_op = differential_model(outputs)
 
             diff_op = tf.keras.layers.Lambda(lambda z: tf.pow(z,2))(diff_op)

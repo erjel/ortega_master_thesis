@@ -3,17 +3,21 @@ import cv2
 
 def gaussian(frame_num,var=1,CROP = 256):
     input_path = frame_num
-    
+
     img = np.asarray(cv2.cvtColor(cv2.imread(input_path), cv2.COLOR_BGR2GRAY), dtype=np.float32)
     img = cv2.resize(img,(CROP,CROP))
-    img = img - np.amin(img)
+    img = img - np.mean(img)
     gauss = np.random.normal(0,var,img.shape)
     gauss = gauss.reshape(img.shape[0],img.shape[1])
-    img_gauss = np.clip(np.copy(img) + gauss,0,255)
+    #img_gauss = np.copy(img) + gauss - np.amin(img)
+    img_gauss = np.copy(img) + gauss
     img_gauss = np.asarray(img_gauss,dtype = np.float32)
-    
-    input_channel = img/np.amax(img)
-    img_gauss = np.clip(img_gauss/np.amax(img),0,1)
+
+    #img = img - np.amin(img)
+    #input_channel = img/np.amax(img)
+    input_channel = img/np.std(img)
+    #img_gauss = np.clip(img_gauss/np.amax(img),0,1)
+    img_gauss = img_gauss/np.std(img_gauss)
     
     return np.array([input_channel, img_gauss])
 
