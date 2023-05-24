@@ -1,2 +1,2 @@
-model_checkpoint_path: "splinesproduct_gaussian_50_25_10_t4_1_0"
-all_model_checkpoint_paths: "splinesproduct_gaussian_50_25_10_t4_1_0"
+model_checkpoint_path: "DifferentialClassifier_5"
+all_model_checkpoint_paths: "DifferentialClassifier_5"
