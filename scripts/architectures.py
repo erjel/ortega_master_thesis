@@ -176,6 +176,7 @@ def get_boundary_detector(CROP):
 
 
 
+
 class function_type:
     def splines(y,num_classes,order):
 
@@ -424,7 +425,7 @@ def regularizer(w):
     
     return factor1 * initial
 
-def differential_operator(input_shape,num_filters,polynomial_degree,typee,inputs_var=None,latent_size=None):
+def differential_operator(input_shape,num_filters,polynomial_degree,typee,inputs_var=None,CROP=256):
     
     outputs = tf.keras.Input(shape=input_shape,name='input_differential')
     
@@ -434,19 +435,19 @@ def differential_operator(input_shape,num_filters,polynomial_degree,typee,inputs
     if (typee != 'diffop') and (typee != 'nopretrained'):
         diff_op1 = tf.keras.layers.Conv2D(num_filters,(2*degree+1,2*degree+1),padding='same',use_bias=False,name='diff')(outputs)
     
-    diff_op1 = tf.keras.layers.Lambda(lambda z: tf.pow(z,2))(diff_op1)
+    #diff_op1 = tf.keras.layers.Lambda(lambda z: tf.pow(z,2))(diff_op1) #####################
     
     if typee != 'foe' and typee != 'foek':
         diff_op = tf.keras.layers.Conv2D(1,1,padding='same',name='no_train',activation='sigmoid')(diff_op1)
     if typee == 'foe':
+        diff_op1 = tf.keras.layers.BatchNormalization()(diff_op1) ##########################
         diff_op = tf.keras.layers.Conv2D(1,1,padding='same',name='no_train')(diff_op1)
         
         if inputs_var != None:
         
-            embedded = tf.keras.layers.Embedding(100,latent_size)(inputs_var)
+            embedded = tf.keras.layers.Embedding(101,(CROP//4)**2)(inputs_var)
             embedded = tf.keras.layers.Flatten()(embedded)
-            embedded = tf.keras.layers.Reshape((int(np.sqrt(latent_size)),int(np.sqrt(latent_size)),1))(embedded)
-            embedded = tf.keras.layers.Conv2DTranspose(64,(2,2), strides=(2,2), padding='same')(embedded)
+            embedded = tf.keras.layers.Reshape((CROP//4,CROP//4,1))(embedded)
             embedded = tf.keras.layers.Conv2DTranspose(32,(2,2), strides=(2,2), padding='same')(embedded)
             embedded = tf.keras.layers.Conv2DTranspose(16,(2,2), strides=(2,2), padding='same')(embedded)
             embedded = tf.keras.layers.Conv2D(1,1, padding='same')(embedded)
@@ -457,14 +458,14 @@ def differential_operator(input_shape,num_filters,polynomial_degree,typee,inputs
         diff_op = tf.keras.layers.Dense(1,activation = 'relu')(diff_op)
         
     if typee == 'foek':
+        diff_op1 = tf.keras.layers.BatchNormalization()(diff_op1) ##########################3
         diff_op = tf.keras.layers.Conv2D(1,5,padding='same',name='no_train')(diff_op1)
         
         if inputs_var != None:
         
-            embedded = tf.keras.layers.Embedding(100,latent_size)(inputs_var)
+            embedded = tf.keras.layers.Embedding(101,(CROP//4)**2)(inputs_var)
             embedded = tf.keras.layers.Flatten()(embedded)
-            embedded = tf.keras.layers.Reshape((int(np.sqrt(latent_size)),int(np.sqrt(latent_size)),1))(embedded)
-            embedded = tf.keras.layers.Conv2DTranspose(64,(2,2), strides=(2,2), padding='same')(embedded)
+            embedded = tf.keras.layers.Reshape((CROP//4,CROP//4,1))(embedded)
             embedded = tf.keras.layers.Conv2DTranspose(32,(2,2), strides=(2,2), padding='same')(embedded)
             embedded = tf.keras.layers.Conv2DTranspose(16,(2,2), strides=(2,2), padding='same')(embedded)
             embedded = tf.keras.layers.Conv2D(1,1, padding='same')(embedded)
@@ -479,14 +480,54 @@ def differential_operator(input_shape,num_filters,polynomial_degree,typee,inputs
         return tf.keras.Model([outputs,inputs_var],diff_op)
     else:
         return tf.keras.Model(outputs,diff_op)
-
-
-
-
     
+    
+def classifier_gamma(inputs, option=1, num_classes=2,kernel_size=3,pool_size=3,CROP=256,latent_size=1024):
+    
+    
+    x = tf.keras.layers.Conv2D(32, kernel_size, strides=2, padding="same")(inputs)
+    x = tf.keras.layers.BatchNormalization()(x)
+    x = tf.keras.layers.Activation("relu")(x)
+
+    x = tf.keras.layers.Conv2D(64, kernel_size, padding="same")(x)
+    x = tf.keras.layers.BatchNormalization()(x)
+    x = tf.keras.layers.Activation("relu")(x)
+
+    previous_block_activation = x 
+
+    for size in [16,32]:
+        x = tf.keras.layers.Activation("relu")(x)
+        x = tf.keras.layers.SeparableConv2D(size, kernel_size, padding="same")(x)
+        x = tf.keras.layers.BatchNormalization()(x)
+
+        x = tf.keras.layers.Activation("relu")(x)
+        x = tf.keras.layers.SeparableConv2D(size, kernel_size, padding="same")(x)
+        x = tf.keras.layers.BatchNormalization()(x)
+
+        x = tf.keras.layers.MaxPooling2D(pool_size, strides=2, padding="same")(x)
+
+        residual = tf.keras.layers.Conv2D(size, 1, strides=2, padding="same")(
+            previous_block_activation
+        )
+        x = tf.keras.layers.add([x, residual])
+        previous_block_activation = x 
+
+    x = tf.keras.layers.SeparableConv2D(latent_size, kernel_size, padding="same")(x)
+    x = tf.keras.layers.BatchNormalization()(x)
+    x = tf.keras.layers.Activation("relu")(x)
+
+    x = tf.keras.layers.GlobalAveragePooling2D()(x)
+    outputs = tf.keras.layers.Dense(1,activation='relu')(x)
+    return tf.keras.Model(inputs, outputs)
+
+
+
+
 
 def get_model(arch,it_lim,image_size,typ='gaussian',num_classes=1,CROP = 256,order = 1,gamma=1,second=True,degree1=3,
-             factor=1,typee='noconstraints',known_variance=True,latent_size=1024):
+             factor=0.001,typee='noconstraints',known_variance=True,latent_size=1024,static_gamma=True):
+    
+    CROP = image_size[0]
 
     global factor1
     factor1 = factor
@@ -503,7 +544,7 @@ def get_model(arch,it_lim,image_size,typ='gaussian',num_classes=1,CROP = 256,ord
             inputs_var = tf.keras.Input(shape=(1),name='var')
             if 'foe' in typee:
                 differential_model = differential_operator(input_shape,num_filters,degree,typee,
-                                                       inputs_var=inputs_var,latent_size=latent_size)
+                                                       inputs_var=inputs_var,CROP=CROP)
                 
             else:
                 differential_model = differential_operator(input_shape,num_filters,degree,typee)
@@ -511,11 +552,11 @@ def get_model(arch,it_lim,image_size,typ='gaussian',num_classes=1,CROP = 256,ord
             differential_model = differential_operator(input_shape,num_filters,degree,typee)
         
         if typee == 'diffop':
-            
-            location = '/home/joel/nmr-storage/fly_group_behavior/scripts/PeronaMalik/thesis/7_apr/general/checkpoints'
-        
-            differential_model.load_weights(f'/{location}/DifferentialClassifier_{degree}')
-            
+
+            differential_model.load_weights(f'/gpfs/soma_fs/home/ortega/thesis/7_apr/general/checkpoints/DifferentialClassifier_{degree}')
+
+
+
     if (known_variance) and (typee == 'classic'):
         inputs_var = tf.keras.Input(shape=(1),name='var')
 
@@ -523,11 +564,16 @@ def get_model(arch,it_lim,image_size,typ='gaussian',num_classes=1,CROP = 256,ord
     inputs = tf.keras.Input(shape=input_shape,name='input')
     
     
-    x = classifier(inputs, num_classes=num_classes,CROP=CROP,latent_size=latent_size)
+    if not static_gamma:
+        Gamma = classifier_gamma(inputs, num_classes=num_classes,CROP=CROP,latent_size=latent_size)
+    
+    #x = tf.keras.layers.Normalization()(inputs)
+    x = tf.keras.layers.Lambda(lambda z:z/tf.math.reduce_std(z,axis=(1,2,3),keepdims=True))(inputs)
+    x = classifier(x, num_classes=num_classes,CROP=CROP,latent_size=latent_size)
     y = tf.keras.layers.Flatten(name='y')(x)
     
     if known_variance:
-        embedded = tf.keras.layers.Embedding(100,latent_size)(inputs_var)
+        embedded = tf.keras.layers.Embedding(101,latent_size)(inputs_var)
         embedded = tf.keras.layers.Flatten(name='embedded')(embedded)
         y = tf.keras.layers.Lambda(lambda z:tf.multiply(z[0],z[1]))([y,embedded])
     
@@ -560,7 +606,7 @@ def get_model(arch,it_lim,image_size,typ='gaussian',num_classes=1,CROP = 256,ord
             else:
                 diff_op = differential_model([outputs,inputs_var])
 
-            diff_op = tf.keras.layers.Lambda(lambda z: tf.pow(z,2))(diff_op)
+            #diff_op = tf.keras.layers.Lambda(lambda z: tf.pow(z,2))(diff_op)
 
         else:
             dS_n,dE_n = tf.keras.layers.Lambda(lambda z: tf.image.image_gradients(z))(outputs)
@@ -602,7 +648,11 @@ def get_model(arch,it_lim,image_size,typ='gaussian',num_classes=1,CROP = 256,ord
         NS = tf.keras.layers.Lambda(lambda z: z[:,1:] - z[:,:-1])(NS)
         EW = tf.keras.layers.Lambda(lambda z: z[:,:,1:] - z[:,:,:-1])(EW)
 
-        mult = tf.keras.layers.Lambda(lambda z: tf.multiply(tf.cast(gamma,dtype=tf.float32),z))(tf.ones_like(NS))
+        if static_gamma:
+            mult = tf.keras.layers.Lambda(lambda z: tf.multiply(tf.cast(gamma,dtype=tf.float32),z))(tf.ones_like(NS))
+        else:
+            c_gamma = Gamma(outputs)
+            mult = tf.keras.layers.multiply((c_gamma,tf.ones_like(NS)))
 
         adding = tf.keras.layers.add([NS,EW])
         adding = tf.keras.layers.multiply((mult,adding))
