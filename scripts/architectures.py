@@ -125,32 +125,30 @@ def conv_block(x, n_filt, size_conv=(5,5), n_conv=3):
         x = tf.keras.layers.Activation('relu')(x)
     return x
 
-def u_encoder(x, n_filt):
+def u_encoder(x, n_filt,degree=5):
     """
     Applies conv_block and returnes max pooled and skip-connection.
     """
-    x = conv_block(x, n_filt)
+    x = conv_block(x, n_filt,size_conv = (degree,degree))
     return tf.keras.layers.MaxPool2D()(x), x
 
-def u_decoder(pooled, skipped, n_filt):
+def u_decoder(pooled, skipped, n_filt,degree=5):
     """
     Upsamples pooled and concats with skiped.
     """
-    upsampled = tf.keras.layers.Convolution2DTranspose(n_filt, (2,2), strides=(2,2), padding='same')(pooled)
+    upsampled = tf.keras.layers.Convolution2DTranspose(n_filt, (degree,degree), strides=(2,2), padding='same')(pooled)
     return conv_block(tf.keras.layers.concatenate([upsampled, skipped]), n_filt)
     
     
-def make_unet(inp, depth=3, output_channels=1):
+def make_unet(inp, depth=3, output_channels=1,degree=5):
     skipped = []
     p = inp
     for _ in range(depth):
-        p, s = u_encoder(p, 2**(1+_))
-        #p, s = u_encoder(p, 2*(1+_))
+        p, s = u_encoder(p, 2**(1+_),degree=degree)
         skipped.append(s)
     p = conv_block(p, 2**(2+depth))
     for _ in reversed(range(depth)):
-        p = u_decoder(p, skipped[_], 2**(2+_))  
-        #p = u_decoder(p, skipped[_], (2**3)*(1+_))  
+        p = u_decoder(p, skipped[_], 2**(2+_),degree=degree)  
     p = tf.keras.layers.Conv2D(output_channels, (1,1), activation='sigmoid')(p)
     return p
 
@@ -172,6 +170,8 @@ def get_boundary_detector(CROP):
         layer.trainable = False
         
     return border
+    
+
     
 
 
@@ -429,6 +429,11 @@ def differential_operator(input_shape,num_filters,polynomial_degree,typee,inputs
     
     outputs = tf.keras.Input(shape=input_shape,name='input_differential')
     
+    if typee == 'unet':
+        inp = tf.keras.Input(input_shape)
+        outp = make_unet(inp,degree=2*degree+1)
+        return tf.keras.models.Model(inp, outp, name='differential_operator')
+    
     if (typee == 'diffop') or (typee == 'nopretrained'):
         diff_op1 = tf.keras.layers.Conv2D(num_filters,(2*degree+1,2*degree+1),padding='same',use_bias=False,
                             kernel_constraint=constraint,kernel_regularizer = regularizer, name='diff')(outputs)
@@ -453,9 +458,9 @@ def differential_operator(input_shape,num_filters,polynomial_degree,typee,inputs
             embedded = tf.keras.layers.Conv2D(1,1, padding='same')(embedded)
             diff_op = tf.keras.layers.multiply([diff_op,embedded])
         
-        diff_op = tf.keras.layers.Dense(64,activation = 'relu')(diff_op)
-        diff_op = tf.keras.layers.Dense(32,activation = 'relu')(diff_op)
-        diff_op = tf.keras.layers.Dense(1,activation = 'relu')(diff_op)
+        #diff_op = tf.keras.layers.Dense(64,activation = 'relu')(diff_op)
+        #diff_op = tf.keras.layers.Dense(32,activation = 'relu')(diff_op)
+        #diff_op = tf.keras.layers.Dense(1,activation = 'relu')(diff_op)
         
     if typee == 'foek':
         diff_op1 = tf.keras.layers.BatchNormalization()(diff_op1) ##########################3
@@ -471,15 +476,16 @@ def differential_operator(input_shape,num_filters,polynomial_degree,typee,inputs
             embedded = tf.keras.layers.Conv2D(1,1, padding='same')(embedded)
             diff_op = tf.keras.layers.multiply([diff_op,embedded])
         
-        diff_op = tf.keras.layers.Dense(64,activation = 'relu')(diff_op)
-        diff_op = tf.keras.layers.Dense(32,activation = 'relu')(diff_op)
-        diff_op = tf.keras.layers.Dense(1,activation = 'relu')(diff_op)
+        #diff_op = tf.keras.layers.Dense(64,activation = 'relu')(diff_op)
+        #diff_op = tf.keras.layers.Dense(32,activation = 'relu')(diff_op)
+        #diff_op = tf.keras.layers.Dense(1,activation = 'relu')(diff_op)
         
     if inputs_var != None:
 
-        return tf.keras.Model([outputs,inputs_var],diff_op)
+        return tf.keras.Model([outputs,inputs_var],diff_op,name='differential_operator')
     else:
-        return tf.keras.Model(outputs,diff_op)
+        return tf.keras.Model(outputs,diff_op,name='differential_operator')
+    
     
     
 def classifier_gamma(inputs, option=1, num_classes=2,kernel_size=3,pool_size=3,CROP=256,latent_size=1024):
@@ -518,7 +524,7 @@ def classifier_gamma(inputs, option=1, num_classes=2,kernel_size=3,pool_size=3,C
 
     x = tf.keras.layers.GlobalAveragePooling2D()(x)
     outputs = tf.keras.layers.Dense(1,activation='relu')(x)
-    return tf.keras.Model(inputs, outputs)
+    return tf.keras.Model(inputs, outputs,name='gamma')
 
 
 
@@ -567,7 +573,6 @@ def get_model(arch,it_lim,image_size,typ='gaussian',num_classes=1,CROP = 256,ord
     if not static_gamma:
         Gamma = classifier_gamma(inputs, num_classes=num_classes,CROP=CROP,latent_size=latent_size)
     
-    #x = tf.keras.layers.Normalization()(inputs)
     x = tf.keras.layers.Lambda(lambda z:z/tf.math.reduce_std(z,axis=(1,2,3),keepdims=True))(inputs)
     x = classifier(x, num_classes=num_classes,CROP=CROP,latent_size=latent_size)
     y = tf.keras.layers.Flatten(name='y')(x)
@@ -664,3 +669,4 @@ def get_model(arch,it_lim,image_size,typ='gaussian',num_classes=1,CROP = 256,ord
         return tf.keras.models.Model([inputs,inputs_var], outputs)
     else:
         return tf.keras.models.Model(inputs, outputs)
+
