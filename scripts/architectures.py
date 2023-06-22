@@ -20,6 +20,77 @@ def divergence_y2(x):
     return(x[:,:,2:]-x[:,:,1:-1])
 
 
+class losses:
+    def Linfty(y_true,y_pred):
+        error = tf.math.log(tf.math.reduce_mean(tf.exp(tf.abs(y_true-y_pred))))
+        return error
+
+    def W1infty(y_true,y_pred):
+        error = tf.math.log(tf.math.reduce_mean(tf.exp(tf.abs(y_true-y_pred))))
+
+        dx_true,dy_true = tf.image.image_gradients(y_true)
+        dx_pred,dy_pred = tf.image.image_gradients(y_pred)
+
+        error += tf.math.log(tf.math.reduce_mean(tf.exp(tf.abs(dx_true-dx_pred))))
+        error += tf.math.log(tf.math.reduce_mean(tf.exp(tf.abs(dy_true-dy_pred))))
+
+        return error
+
+    def H1(y_true,y_pred):
+        error = tf.math.reduce_mean(tf.pow(y_true-y_pred,2))
+
+        dx_true,dy_true = tf.image.image_gradients(y_true)
+        dx_pred,dy_pred = tf.image.image_gradients(y_pred)
+
+        error += tf.math.reduce_mean(tf.pow(dx_true-dx_pred,2))
+        error += tf.math.reduce_mean(tf.pow(dy_true-dy_pred,2))
+        error = tf.sqrt(error)
+
+        return error
+
+    def L2(y_true,y_pred):
+        error = tf.math.reduce_mean(tf.pow(y_true-y_pred,2))  
+
+        return error
+
+    def probability(y_true,y_pred):
+        error = -tf.image.ssim(y_true,y_pred,255)
+
+        return error
+    
+    def product(y_true,y_pred):
+        
+        return -tf.image.psnr(y_true,y_pred,255)*tf.image.ssim(y_true,y_pred,255) 
+
+    def psnr(y_true,y_pred):
+        
+        return -tf.image.psnr(y_true,y_pred,255) 
+    
+    def Hpsnr(y_true,y_pred):
+        
+        error = -tf.image.psnr(y_true,y_pred,255)
+        m = tf.reduce_max(tf.abs(tf.image.image_gradients(y_true)))
+        gt = tf.image.image_gradients(y_true)
+        gp = tf.image.image_gradients(y_pred)
+        error += -tf.image.psnr(gt[0],gp[0],m)
+        error += -tf.image.psnr(gt[1],gp[1],m)
+        
+        return error 
+    
+    def Hproduct(y_true,y_pred):
+        
+        error = -tf.image.psnr(y_true,y_pred,255)*tf.image.ssim(y_true,y_pred,255)
+        m = tf.reduce_max(tf.abs(tf.image.image_gradients(y_true)))
+        gt = tf.image.image_gradients(y_true)
+        gp = tf.image.image_gradients(y_pred)
+        gt = [tf.cast(g,tf.float32) for g in gt]
+        gp = [tf.cast(g,tf.float32) for g in gp]
+        error += -tf.image.psnr(gt[0],gp[0],m)*tf.image.ssim(gt[0],gt[1],m)
+        error += -tf.image.psnr(gt[1],gp[1],m)*tf.image.ssim(gt[1],gt[1],m)
+        
+        return error 
+
+
 
 
 def classifier(inputs, option=1, num_classes=2,kernel_size=3,pool_size=3,CROP=256,latent_size=1024):
@@ -62,55 +133,6 @@ def classifier(inputs, option=1, num_classes=2,kernel_size=3,pool_size=3,CROP=25
     return x
 
 
-def make_embedding(input_shape,kernel_size=3,pool_size=3,CROP=256):
-    
-    
-    inputs = tf.keras.layers.Input(input_shape)
-    x = tf.keras.layers.Conv2D(32, kernel_size, strides=2, padding="same")(inputs)
-    x = tf.keras.layers.BatchNormalization()(x)
-    x = tf.keras.layers.Activation("relu")(x)
-
-    x = tf.keras.layers.Conv2D(64, kernel_size, padding="same")(x)
-    x = tf.keras.layers.BatchNormalization()(x)
-    x = tf.keras.layers.Activation("relu")(x)
-
-    previous_block_activation = x  # Set aside residual
-
-    for size in [16,32,64,128]:
-        x = tf.keras.layers.Activation("relu")(x)
-        x = tf.keras.layers.SeparableConv2D(size, kernel_size, padding="same")(x)
-        x = tf.keras.layers.BatchNormalization()(x)
-
-        x = tf.keras.layers.Activation("relu")(x)
-        x = tf.keras.layers.SeparableConv2D(size, kernel_size, padding="same")(x)
-        x = tf.keras.layers.BatchNormalization()(x)
-
-        x = tf.keras.layers.MaxPooling2D(pool_size, strides=2, padding="same")(x)
-
-        # Project residual
-        residual = tf.keras.layers.Conv2D(size, 1, strides=2, padding="same")(
-            previous_block_activation
-        )
-        x = tf.keras.layers.add([x, residual])  # Add back residual
-        previous_block_activation = x  # Set aside next residual
-
-    x = tf.keras.layers.SeparableConv2D(32*32, kernel_size, padding="same")(x)
-    x = tf.keras.layers.BatchNormalization()(x)
-    x = tf.keras.layers.Activation("relu")(x)
-
-    x = tf.keras.layers.GlobalAveragePooling2D()(x)
-    
-    embedding =  tf.keras.Model(inputs,x)
-    try:
-    	embedding.load_weights('/home/joel/nmr-storage/fly_group_behavior/scripts/PeronaMalik/thesis/23_jan/border/checkpoints/embedding')
-    except:
-    	embedding.load_weights('/home/joel/thesis/23_jan/border/checkpoints/embedding')
-    
-    for layer in embedding.layers[:-4]:
-        layer.trainable = False
-    
-    return embedding
-
 
 """
 Creating the model
@@ -139,39 +161,40 @@ def u_decoder(pooled, skipped, n_filt,degree=5):
     upsampled = tf.keras.layers.Convolution2DTranspose(n_filt, (degree,degree), strides=(2,2), padding='same')(pooled)
     return conv_block(tf.keras.layers.concatenate([upsampled, skipped]), n_filt)
     
+def making_awareness(p,q,n_filt,degree=5):
+    p = tf.keras.layers.Concatenate()([p,q])
+    p = conv_block(p,n_filt,size_conv = (degree,degree))
+    return p
     
-def make_unet(inp, depth=3, output_channels=1,degree=5):
+def make_unet(input_shape, depth=5, output_channels=1,degree=5,nfilt=2,type_training='basic',it_lim=10):
     skipped = []
+    inp = tf.keras.Input(input_shape,name='input')
+
     p = inp
     for _ in range(depth):
-        p, s = u_encoder(p, 2**(1+_),degree=degree)
+        p, s = u_encoder(p, 2**(nfilt+_),degree=degree)
         skipped.append(s)
     p = conv_block(p, 2**(2+depth))
-    for _ in reversed(range(depth)):
-        p = u_decoder(p, skipped[_], 2**(2+_),degree=degree)  
-    p = tf.keras.layers.Conv2D(output_channels, (1,1), activation='sigmoid')(p)
-    return p
-
-def make_boundary_detector(inp):
-    """
-    Takes network Input layer 
-    """
-    outp = make_unet(inp)
-    return tf.keras.models.Model(inp, outp)
-
-def get_boundary_detector(CROP):
-    border = make_boundary_detector(tf.keras.layers.Input(shape=(CROP,CROP, 1)))
-    try:
-    	border.load_weights(f"/home/joel/nmr-storage/fly_group_behavior/scripts/PeronaMalik/thesis/23_jan/border/checkpoints/borders_gaussian")
-    except:
-    	border.load_weights('/home/joel/thesis/23_jan/border/checkpoints/borders_gaussian')
-
-    for layer in border.layers:
-        layer.trainable = False
-        
-    return border
     
-
+    if 'aware' in type_training:
+        inputs_aware = tf.keras.Input(shape=(1),name='aware')
+        size = int((input_shape[0]/(2**depth))**2)
+        aware = tf.keras.layers.Embedding(it_lim +1,size)(inputs_aware)
+        aware = tf.keras.layers.Reshape((input_shape[0]//(2**depth),input_shape[0]//(2**depth),1))(aware)
+        aware = conv_block(aware, 2**(2+depth))
+        p = making_awareness(p,aware, 2**(2+depth))
+    for _ in reversed(range(depth)):
+        p = u_decoder(p, skipped[_], 2**(nfilt+_),degree=degree)  
+        if 'aware' in type_training:
+            aware = tf.keras.layers.Convolution2DTranspose(2**(nfilt+_), (degree,degree), strides=(2,2), padding='same')(aware)
+            p = making_awareness(p,aware, 2**(nfilt+_))
+            
+    p = tf.keras.layers.Conv2D(output_channels, (1,1), activation='sigmoid')(p)
+    
+    if 'aware' in type_training:
+        return tf.keras.Model([inp,inputs_aware],p,name='differential_operator')
+    else:
+        return tf.keras.Model(inp,p,name='differential_operator')
     
 
 
@@ -393,280 +416,228 @@ class function_type:
         return a,b
 
 
-def constraint(W):
-    or_shape = W.shape
-    shift = (2*degree+2)*((2*degree+1)//2)
-    NW = []
-    for w in tf.unstack(W,axis=-1):
-        nw = tf.roll(tf.reshape(w,[(2*degree+1)**2]),shift=shift+1,axis=0)
-        nw = tf.slice(nw,[1],[(2*degree+1)**2-1])
-        nw = tf.abs(nw)
-        center = -tf.expand_dims(tf.reduce_sum(nw),0)
-        nw = tf.concat((center,nw),axis=0)
-        nw = tf.roll(nw,shift,axis=0)
-        nw = tf.reshape(nw,(2*degree+1,2*degree+1,1))
-        NW.append(nw)
-
-    return tf.stack(NW,axis=-1)
-
-
-def regularizer(w):
-
-    projections = tf.unstack(w,axis=-1)
-    initial = 0
-
-    for pr in range(len(projections)):
-        for ps in range(len(projections)):
-            if pr > ps:
-                proj = tf.multiply(projections[pr],projections[ps])
-                initial += tf.reduce_sum(tf.abs(proj)) - tf.reduce_sum(tf.abs(proj[degree,degree]))
-                
-
+def differential_operator(input_shape,num_filters,degree,typee,CROP=256,depth=3,nfilt=2,
+                          type_training='basic',it_lim=10):
     
-    return factor1 * initial
-
-def differential_operator(input_shape,num_filters,polynomial_degree,typee,inputs_var=None,CROP=256):
-    
-    outputs = tf.keras.Input(shape=input_shape,name='input_differential')
     
     if typee == 'unet':
-        inp = tf.keras.Input(input_shape)
-        outp = make_unet(inp,degree=2*degree+1)
-        return tf.keras.models.Model(inp, outp, name='differential_operator')
+        return make_unet(input_shape,degree=2*degree+1,depth=depth,nfilt=nfilt,
+                         type_training=type_training,it_lim=it_lim)
     
-    if (typee == 'diffop') or (typee == 'nopretrained'):
-        diff_op1 = tf.keras.layers.Conv2D(num_filters,(2*degree+1,2*degree+1),padding='same',use_bias=False,
-                            kernel_constraint=constraint,kernel_regularizer = regularizer, name='diff')(outputs)
-    if (typee != 'diffop') and (typee != 'nopretrained'):
-        diff_op1 = tf.keras.layers.Conv2D(num_filters,(2*degree+1,2*degree+1),padding='same',use_bias=False,name='diff')(outputs)
-    
-    #diff_op1 = tf.keras.layers.Lambda(lambda z: tf.pow(z,2))(diff_op1) #####################
-    
-    if typee != 'foe' and typee != 'foek':
-        diff_op = tf.keras.layers.Conv2D(1,1,padding='same',name='no_train',activation='sigmoid')(diff_op1)
-    if typee == 'foe':
-        diff_op1 = tf.keras.layers.BatchNormalization()(diff_op1) ##########################
-        diff_op = tf.keras.layers.Conv2D(1,1,padding='same',name='no_train')(diff_op1)
+    if typee == 'noconstraints':
         
-        if inputs_var != None:
+        outputs = tf.keras.Input(shape=input_shape,name='input')        
+        diff_op = tf.keras.layers.Conv2D(num_filters,(2*degree+1,2*degree+1),padding='same',use_bias=False,name='diff')(outputs)
         
-            embedded = tf.keras.layers.Embedding(101,(CROP//4)**2)(inputs_var)
-            embedded = tf.keras.layers.Flatten()(embedded)
-            embedded = tf.keras.layers.Reshape((CROP//4,CROP//4,1))(embedded)
-            embedded = tf.keras.layers.Conv2DTranspose(32,(2,2), strides=(2,2), padding='same')(embedded)
-            embedded = tf.keras.layers.Conv2DTranspose(16,(2,2), strides=(2,2), padding='same')(embedded)
-            embedded = tf.keras.layers.Conv2D(1,1, padding='same')(embedded)
-            diff_op = tf.keras.layers.multiply([diff_op,embedded])
-        
-        #diff_op = tf.keras.layers.Dense(64,activation = 'relu')(diff_op)
-        #diff_op = tf.keras.layers.Dense(32,activation = 'relu')(diff_op)
-        #diff_op = tf.keras.layers.Dense(1,activation = 'relu')(diff_op)
-        
-    if typee == 'foek':
-        diff_op1 = tf.keras.layers.BatchNormalization()(diff_op1) ##########################3
-        diff_op = tf.keras.layers.Conv2D(1,5,padding='same',name='no_train')(diff_op1)
-        
-        if inputs_var != None:
-        
-            embedded = tf.keras.layers.Embedding(101,(CROP//4)**2)(inputs_var)
-            embedded = tf.keras.layers.Flatten()(embedded)
-            embedded = tf.keras.layers.Reshape((CROP//4,CROP//4,1))(embedded)
-            embedded = tf.keras.layers.Conv2DTranspose(32,(2,2), strides=(2,2), padding='same')(embedded)
-            embedded = tf.keras.layers.Conv2DTranspose(16,(2,2), strides=(2,2), padding='same')(embedded)
-            embedded = tf.keras.layers.Conv2D(1,1, padding='same')(embedded)
-            diff_op = tf.keras.layers.multiply([diff_op,embedded])
-        
-        #diff_op = tf.keras.layers.Dense(64,activation = 'relu')(diff_op)
-        #diff_op = tf.keras.layers.Dense(32,activation = 'relu')(diff_op)
-        #diff_op = tf.keras.layers.Dense(1,activation = 'relu')(diff_op)
-        
-    if inputs_var != None:
+        if 'aware' in type_training:
+            depth = 3
+            size = int((input_shape[0]/(2**depth))**2)
+            inputs_aware = inputs_aware = tf.keras.Input(shape=(1),name='aware')
+            aware = tf.keras.layers.Embedding(it_lim +1,size)(inputs_aware)
+            aware = tf.keras.layers.Reshape((input_shape[0]//(2**depth),input_shape[0]//(2**depth),1))(aware)
+            aware = conv_block(aware, 2**(2+depth))
+            for _ in reversed(range(depth)):
+                aware = tf.keras.layers.Convolution2DTranspose(2**(nfilt+_), (degree,degree), strides=(2,2), padding='same')(aware)
 
-        return tf.keras.Model([outputs,inputs_var],diff_op,name='differential_operator')
-    else:
-        return tf.keras.Model(outputs,diff_op,name='differential_operator')
+            diff_op = making_awareness(diff_op,aware, 2**(nfilt+_))
+            diff_op = tf.keras.layers.Conv2D(output_channels, (1,1), activation='sigmoid')(diff_op)
+        
+            return tf.keras.Model([outputs,inputs_aware],diff_op,name='differential_operator')
+        
+        else:
+            return tf.keras.Model(outputs,diff_op,name='differential_operator')
     
     
     
-def classifier_gamma(inputs, option=1, num_classes=2,kernel_size=3,pool_size=3,CROP=256,latent_size=1024):
+
+
+def get_model(arch,it_lim,image_size,BATCH_SIZE,type_training,loss,num_classes=10,order = 1,gamma=1,degree=3,
+             typee='noconstraints',known_variance=True,latent_size=1024,depth=3,nfilt=2):
     
+    class diffusor(tf.keras.Model):
     
-    x = tf.keras.layers.Conv2D(32, kernel_size, strides=2, padding="same")(inputs)
-    x = tf.keras.layers.BatchNormalization()(x)
-    x = tf.keras.layers.Activation("relu")(x)
+        def __init__(self, arch,it_lim,image_size,loss,num_classes=10,order = 1,gamma=1,degree=3,
+                 typee='noconstraints',known_variance=True,latent_size=1024,classifier=classifier,
+                     type_training = 'basic',depth=3,nfilt=2,BATCH_SIZE=BATCH_SIZE):
 
-    x = tf.keras.layers.Conv2D(64, kernel_size, padding="same")(x)
-    x = tf.keras.layers.BatchNormalization()(x)
-    x = tf.keras.layers.Activation("relu")(x)
-
-    previous_block_activation = x 
-
-    for size in [16,32]:
-        x = tf.keras.layers.Activation("relu")(x)
-        x = tf.keras.layers.SeparableConv2D(size, kernel_size, padding="same")(x)
-        x = tf.keras.layers.BatchNormalization()(x)
-
-        x = tf.keras.layers.Activation("relu")(x)
-        x = tf.keras.layers.SeparableConv2D(size, kernel_size, padding="same")(x)
-        x = tf.keras.layers.BatchNormalization()(x)
-
-        x = tf.keras.layers.MaxPooling2D(pool_size, strides=2, padding="same")(x)
-
-        residual = tf.keras.layers.Conv2D(size, 1, strides=2, padding="same")(
-            previous_block_activation
-        )
-        x = tf.keras.layers.add([x, residual])
-        previous_block_activation = x 
-
-    x = tf.keras.layers.SeparableConv2D(latent_size, kernel_size, padding="same")(x)
-    x = tf.keras.layers.BatchNormalization()(x)
-    x = tf.keras.layers.Activation("relu")(x)
-
-    x = tf.keras.layers.GlobalAveragePooling2D()(x)
-    outputs = tf.keras.layers.Dense(1,activation='relu')(x)
-    return tf.keras.Model(inputs, outputs,name='gamma')
+            super().__init__()
+            self.it_lim = it_lim
+            self.order = order
+            self.gamma = gamma
+            self.degree = degree
+            self.typee = typee
+            self.known_variance = known_variance
+            self.loss = loss
+            self.loss_tracker = tf.keras.metrics.Mean(name="loss")
+            self.type_training = type_training
+            self.BATCH_SIZE = BATCH_SIZE
 
 
+            CROP = image_size[0]
 
 
-
-def get_model(arch,it_lim,image_size,typ='gaussian',num_classes=1,CROP = 256,order = 1,gamma=1,second=True,degree1=3,
-             factor=0.001,typee='noconstraints',known_variance=True,latent_size=1024,static_gamma=True):
-    
-    CROP = image_size[0]
-
-    global factor1
-    factor1 = factor
-    
-    global degree
-    degree = degree1
-
-
-    input_shape = image_size + (1,)   
-    if typee != 'classic':
-        num_filters = np.sum(2**np.arange(1,degree+1))
-        
-        if known_variance:
-            inputs_var = tf.keras.Input(shape=(1),name='var')
-            if 'foe' in typee:
-                differential_model = differential_operator(input_shape,num_filters,degree,typee,
-                                                       inputs_var=inputs_var,CROP=CROP)
-                
+            input_shape = image_size + (1,)   
+            inputs = tf.keras.Input(shape=input_shape,name='input')
+            if typee != 'classic':
+                num_filters = np.sum(2**np.arange(1,degree+1))
+                differential_model = differential_operator(input_shape,num_filters,degree,typee,CROP=CROP,
+                            depth=depth,nfilt=nfilt,type_training=type_training,it_lim=it_lim)
             else:
-                differential_model = differential_operator(input_shape,num_filters,degree,typee)
-        else:
-            differential_model = differential_operator(input_shape,num_filters,degree,typee)
-        
-        if typee == 'diffop':
 
-            differential_model.load_weights(f'/gpfs/soma_fs/home/ortega/thesis/7_apr/general/checkpoints/DifferentialClassifier_{degree}')
+                dS_n,dE_n = tf.keras.layers.Lambda(lambda z: tf.image.image_gradients(z))(inputs)
+                dS = tf.keras.layers.Lambda(lambda z: tf.pow(z,2))(dS_n)
+                dE = tf.keras.layers.Lambda(lambda z: tf.pow(z,2))(dE_n)
+                diff_op = tf.keras.layers.add((dS,dE))
+                differential_model = tf.keras.Model(inputs,diff_op)
 
-
-
-    if (known_variance) and (typee == 'classic'):
-        inputs_var = tf.keras.Input(shape=(1),name='var')
+            self.differential_model = differential_model
 
 
-    inputs = tf.keras.Input(shape=input_shape,name='input')
-    
-    
-    if not static_gamma:
-        Gamma = classifier_gamma(inputs, num_classes=num_classes,CROP=CROP,latent_size=latent_size)
-    
-    x = tf.keras.layers.Lambda(lambda z:z/tf.math.reduce_std(z,axis=(1,2,3),keepdims=True))(inputs)
-    x = classifier(x, num_classes=num_classes,CROP=CROP,latent_size=latent_size)
-    y = tf.keras.layers.Flatten(name='y')(x)
-    
-    if known_variance:
-        embedded = tf.keras.layers.Embedding(101,latent_size)(inputs_var)
-        embedded = tf.keras.layers.Flatten(name='embedded')(embedded)
-        y = tf.keras.layers.Lambda(lambda z:tf.multiply(z[0],z[1]))([y,embedded])
-    
-    a,b = getattr(function_type,arch)(y,num_classes,order)    
-    b = tf.keras.layers.Lambda(lambda z: tf.multiply(tf.ones_like(z[0]),z[1]))([a,b])
-    if 'flux' in arch:
-        num_classes = 2*num_classes
+            x = tf.keras.layers.Lambda(lambda z:z/tf.math.reduce_std(z,axis=(1,2,3),keepdims=True))(inputs)
+            x = classifier(x, num_classes=num_classes,CROP=CROP,latent_size=latent_size)
+            y = tf.keras.layers.Flatten(name='y')(x)
+
+            if known_variance:
+                inputs_var = tf.keras.Input(shape=(1),name='var')
+                embedded = tf.keras.layers.Embedding(101,latent_size)(inputs_var)
+                embedded = tf.keras.layers.Flatten(name='embedded')(embedded)
+                y = tf.keras.layers.Lambda(lambda z:tf.multiply(z[0],z[1]))([y,embedded])
+
+            a,b = getattr(function_type,arch)(y,num_classes,order)    
+            b = tf.keras.layers.Lambda(lambda z: tf.multiply(tf.ones_like(z[0]),z[1]))([a,b])
+            if 'flux' in arch:
+                num_classes = 2*num_classes
 
 
-    partition_low = tf.constant(np.power(np.linspace(0,1,num_classes+1),1)[:-1])
-    partition_low = tf.expand_dims(tf.expand_dims(tf.expand_dims(partition_low,0),0),0)
-    partition_low = tf.cast(partition_low,tf.float32)
-    partition_up = tf.constant(np.power(np.linspace(0,1,num_classes+1),1)[1:])
-    partition_up = tf.expand_dims(tf.expand_dims(tf.expand_dims(partition_up,0),0),0)
-    partition_up = tf.cast(partition_up,tf.float32)
+            partition_low = tf.constant(np.power(np.linspace(0,1,num_classes+1),1)[:-1])
+            partition_low = tf.expand_dims(tf.expand_dims(tf.expand_dims(partition_low,0),0),0)
+            partition_low = tf.cast(partition_low,tf.float32)
+            partition_up = tf.constant(np.power(np.linspace(0,1,num_classes+1),1)[1:])
+            partition_up = tf.expand_dims(tf.expand_dims(tf.expand_dims(partition_up,0),0),0)
+            partition_up = tf.cast(partition_up,tf.float32)
+
+            self.partition_low = partition_low
+            self.partition_up = partition_up
 
 
-    ct = tf.keras.layers.Concatenate(name='coeff_spline')((b,a))
-    ct = tf.keras.layers.Lambda(lambda z: tf.expand_dims(tf.expand_dims(z,axis=1),axis=1))(ct)
+            ct = tf.keras.layers.Concatenate(name='coeff_spline')((b,a))
+            ct = tf.keras.layers.Lambda(lambda z: tf.expand_dims(tf.expand_dims(z,axis=1),axis=1))(ct)
 
-    outputs = inputs
-
-
-    for num_it in range(it_lim):
-
-
-        if typee != 'classic':  
-            if ('foe' not in typee) or (not known_variance):
-                diff_op = differential_model(outputs)
+            if known_variance:
+                self.diffusivity = tf.keras.Model([inputs,inputs_var],ct)
             else:
-                diff_op = differential_model([outputs,inputs_var])
+                self.diffusivity = tf.keras.Model(inputs,ct)
 
-            #diff_op = tf.keras.layers.Lambda(lambda z: tf.pow(z,2))(diff_op)
+            ct = tf.keras.Input(shape=(1,1,num_classes,2))
+            diff_op = tf.keras.Input(shape=input_shape)
+            outputs = tf.keras.Input(shape=input_shape)
+            ineq1 = tf.greater_equal(diff_op, self.partition_low)
+            ineq2 = tf.less_equal(diff_op, self.partition_up)
 
-        else:
-            dS_n,dE_n = tf.keras.layers.Lambda(lambda z: tf.image.image_gradients(z))(outputs)
-            dS = tf.keras.layers.Lambda(lambda z: tf.pow(z,2))(dS_n)
-            dE = tf.keras.layers.Lambda(lambda z: tf.pow(z,2))(dE_n)
-            diff_op = tf.keras.layers.add((dS,dE))
+            interval = tf.cast(tf.math.logical_and(ineq1,ineq2),tf.float32)
 
+            power_norm = tf.constant(np.asarray(np.arange(1,self.order+1),dtype='float32'))
+            power_norm = tf.keras.layers.Lambda(lambda z:tf.pow(z[0],z[1]))([diff_op,power_norm])
+            cte = tf.ones_like(diff_op)
+            power_norm = tf.keras.layers.Concatenate(axis=-1)((cte,power_norm))
+            power_norm = tf.keras.layers.Lambda(lambda z: tf.expand_dims(z,axis=-2))(power_norm)
 
+            spline = tf.keras.layers.multiply([ct,power_norm])
+            spline = tf.keras.layers.Lambda(lambda z:tf.math.reduce_sum(z,axis=-1))(spline)
+            spline = tf.keras.layers.multiply([spline,interval])
 
-        ineq1 = tf.greater_equal(diff_op, partition_low)
-        ineq2 = tf.less_equal(diff_op,partition_up)
-
-        interval = tf.cast(tf.math.logical_and(ineq1,ineq2),tf.float32)
-
-        power_norm = tf.constant(np.asarray(np.arange(1,order+1),dtype='float32'))
-        power_norm = tf.keras.layers.Lambda(lambda z:tf.pow(z[0],z[1]))([diff_op,power_norm])
-        cte = tf.ones_like(inputs)
-        power_norm = tf.keras.layers.Concatenate(axis=-1)((cte,power_norm))
-        power_norm = tf.keras.layers.Lambda(lambda z: tf.expand_dims(z,axis=-2))(power_norm)
-
-        spline = tf.keras.layers.multiply([ct,power_norm])
-        spline = tf.keras.layers.Lambda(lambda z:tf.math.reduce_sum(z,axis=-1))(spline)
-        spline = tf.keras.layers.multiply([spline,interval])
-
-        g = tf.keras.layers.Lambda(lambda z: tf.math.reduce_sum(z,axis=-1),name=f'g_{num_it}')(spline)
-        g = tf.expand_dims(g,axis=-1)
+            g = tf.keras.layers.Lambda(lambda z: tf.math.reduce_sum(z,axis=-1))(spline)
+            g = tf.expand_dims(g,axis=-1)
 
 
-        deltaS,deltaE = tf.keras.layers.Lambda(lambda z: tf.image.image_gradients(z))(outputs)
-        E = tf.keras.layers.multiply((g,deltaE))
-        S = tf.keras.layers.multiply((g,deltaS))
+            deltaS,deltaE = tf.keras.layers.Lambda(lambda z: tf.image.image_gradients(z))(outputs)
+            E = tf.keras.layers.multiply((g,deltaE))
+            S = tf.keras.layers.multiply((g,deltaS))
 
-        NS = S
-        EW = E
-        zeros_y = tf.expand_dims(tf.zeros_like(outputs)[:,1],axis=-1)
-        zeros_x = tf.expand_dims(tf.zeros_like(inputs)[:,1],axis=-3)
-        NS = tf.keras.layers.Concatenate(axis=1)([zeros_x,NS])
-        EW = tf.keras.layers.Concatenate(axis=2)([zeros_y,EW])
-        NS = tf.keras.layers.Lambda(lambda z: z[:,1:] - z[:,:-1])(NS)
-        EW = tf.keras.layers.Lambda(lambda z: z[:,:,1:] - z[:,:,:-1])(EW)
+            NS = S
+            EW = E
+            zeros_y = tf.expand_dims(tf.zeros_like(outputs)[:,1],axis=-1)
+            zeros_x = tf.expand_dims(tf.zeros_like(outputs)[:,1],axis=-3)
+            NS = tf.keras.layers.Concatenate(axis=1)([zeros_x,NS])
+            EW = tf.keras.layers.Concatenate(axis=2)([zeros_y,EW])
+            NS = tf.keras.layers.Lambda(lambda z: z[:,1:] - z[:,:-1])(NS)
+            EW = tf.keras.layers.Lambda(lambda z: z[:,:,1:] - z[:,:,:-1])(EW)
 
-        if static_gamma:
-            mult = tf.keras.layers.Lambda(lambda z: tf.multiply(tf.cast(gamma,dtype=tf.float32),z))(tf.ones_like(NS))
-        else:
-            c_gamma = Gamma(outputs)
-            mult = tf.keras.layers.multiply((c_gamma,tf.ones_like(NS)))
+            mult = tf.keras.layers.Lambda(lambda z: tf.multiply(tf.cast(self.gamma,dtype=tf.float32),z))(tf.ones_like(NS))
 
-        adding = tf.keras.layers.add([NS,EW])
-        adding = tf.keras.layers.multiply((mult,adding))
+            adding = tf.keras.layers.add([NS,EW])
+            adding = tf.keras.layers.multiply((mult,adding))
 
-        outputs = tf.keras.layers.add([outputs,adding])
-       
-    
-    if known_variance:
-        return tf.keras.models.Model([inputs,inputs_var], outputs)
-    else:
-        return tf.keras.models.Model(inputs, outputs)
+            self.diffusion = tf.keras.Model([diff_op,outputs,ct],adding)
+
+        def call(self, inputs):
+            ct = self.diffusivity(inputs)
+
+            if self.known_variance:
+                outputs = inputs['input']
+            else:
+                outputs = inputs
+
+            for num_it in range(self.it_lim):
+
+                if 'aware' in self.type_training:
+                    stage = (self.it_lim-num_it)*tf.ones(self.BATCH_SIZE)
+                    diff_op = self.differential_model([outputs,stage])
+                else:
+                    diff_op = self.differential_model(outputs)
+                adding = self.diffusion([diff_op,outputs,ct])
+                outputs = tf.keras.layers.add([outputs,adding])
+
+            return outputs
+
+        def train_step(self, data):
+            x,y = data
+
+            with tf.GradientTape() as tape:
+                ct = self.diffusivity(x,training =True)
+
+                if self.known_variance:
+                    outputs = x['input']
+                else:
+                    outputs = x
+
+                for num_it in range(self.it_lim):
+
+                    if 'aware' in self.type_training:
+                        stage = (self.it_lim-num_it)*tf.ones(self.BATCH_SIZE)
+                        diff_op = self.differential_model([outputs,stage],training=True)
+                    else:
+                        diff_op = self.differential_model(outputs,training=True)
+                    adding = self.diffusion([diff_op,outputs,ct],training=True)
+
+                    if 'greedy' in self.type_training:
+                        outputs = adding + tf.stop_gradient(outputs)
+                    else:
+                        outputs = tf.keras.layers.add([outputs,adding])
+
+                loss = self.loss(y, outputs)
+
+            trainable_vars = self.trainable_variables
+            gradients = tape.gradient(loss, trainable_vars)
+
+            self.optimizer.apply_gradients(zip(gradients, trainable_vars))
+
+            self.loss_tracker.update_state(loss)
+            return {"loss": self.loss_tracker.result()}
+
+        def test_step(self, data):
+
+            x,y = data
+            y_pred = self(x)
+            loss = self.loss(y,y_pred)
+            self.loss_tracker.update_state(loss)
+            return {"loss": self.loss_tracker.result()}
+        
+    loss = getattr(losses,loss)
+
+    model = diffusor(arch,it_lim,image_size,loss,num_classes=num_classes,order = order,gamma=gamma,degree=degree,
+                 typee=typee,known_variance=known_variance,latent_size=latent_size,classifier=classifier,
+                     type_training = type_training,depth=depth,nfilt=nfilt,BATCH_SIZE=BATCH_SIZE)
+
+    return model 
 

@@ -44,7 +44,12 @@ def sample_images(frame_nums):
             
         for n in range(N_REPEAT_FRAME):
             
-            var = np.random.randint(var_d,var_u)
+            #var = np.random.randint(var_d,var_u)
+            
+            if np.random.uniform(0,1) < 0.5:
+                var = np.random.randint(var_d,var_u)
+            else:
+                var = np.random.choice([1, 2, 5, 10, 15, 20, 25, 50, 75, 100])
             img = open_frame(chosen_image,var,CROP)
             a =  augment(np.copy(img),crop = CROP)
             yield a,var
@@ -71,10 +76,17 @@ def get_data_generator(sampler):
     
     
 def get_generators(typ,var1_d,var1_u,BATCH_SIZE = 50, CROP1 = 256,
-                  known_variance=True,N_REPEAT_FRAME1=1):
+                  known_variance=True,N_REPEAT_FRAME1=1,coco=False):
 
     test = glob('../../images/test/*.jpg')
     train = glob('../../images/train/*.jpg')
+    
+    if coco:
+        test_coco = glob('/home/joel/nmr-storage/fly_group_behavior/scripts/PeronaMalik/images/coco/test2017/*.jpg')
+        train_coco = glob('/home/joel/nmr-storage/fly_group_behavior/scripts/PeronaMalik/images/coco/train2017/*.jpg')
+        
+        test = np.concatenate((test,test_coco))
+        train = np.concatenate((train,train_coco))
 
 
     global open_frame
@@ -128,3 +140,8 @@ def get_generators(typ,var1_d,var1_u,BATCH_SIZE = 50, CROP1 = 256,
         gen_batch_val = dg_val.batch(BATCH_SIZE)
 
     return (gen_batch_train,gen_batch_val)
+
+
+    
+    
+
