@@ -39,7 +39,11 @@ The figure below shows some examples of the outcomes.
 ![Screenshot from 2023-03-06 15-22-43](https://user-images.githubusercontent.com/57953211/223137288-69210aa9-fb04-4c1f-92e9-73758237ec7d.png)
 
 
-
+## How to run
+```
+conda env create -n tracking -f environment.yml
+python models_training.py 1 7776
+```
 
 ## References
 
