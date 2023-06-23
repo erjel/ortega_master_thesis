@@ -1,0 +1,15 @@
+#!/bin/bash
+#SBATCH --job-name=denoising
+#SBATCH --array=1-7776
+#SBATCH --gres=gpu:1
+#SBATCH --partition=GPU
+#SBATCH --time=23:00:00
+#SBATCH --mem=75G
+#SBATCH --output=${HOME}/jobs//bp-%A-%a.out
+#SBATCH --error=${HOME}/jobs//bp-%A-%a.error
+#source /gpfs/soma_fs/home/ortega/.bashrc
+conda activate tracking
+#export LD_LIBRARY_PATH=$CONDA_PREFIX/lib/:$LD_LIBRARY_PATH
+echo "CUDA_VISIBLE_DEVICES=$CUDA_VISIBLE_DEVICES"
+which python
+python models_training.py $SLURM_ARRAY_TASK_ID 7776 

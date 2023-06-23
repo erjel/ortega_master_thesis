@@ -46,6 +46,8 @@ class losses:
 
 if __name__ == '__main__':
     
+    import os
+    from pathlib import Path
 
     import numpy as np
     import matplotlib
@@ -71,7 +73,9 @@ if __name__ == '__main__':
 
 
     import sys
-    sys.path.append('/gpfs/soma_fs/home/ortega/thesis/scripts')
+    ROOT_DIR = Path(os.environ['PWD'])
+    sys.path.append(str(ROOT_DIR / 'scripts'))
+    print(sys.path)
     from open_frame import open_frame as OF
     from pm_algorithm import anisodiff
     from data_augmentation import get_generators
@@ -119,12 +123,12 @@ if __name__ == '__main__':
                         
                                         current_jobs += 1
 
-                                        print(current_jobs,f"/gpfs/soma_fs/home/ortega/thesis/7_apr/{arch}/checkpoints/{arch}{loss}_{typ}_{num_classes}_{N_REPEAT_FRAME1}_{it_lim}_t{degree}_{f1}_t{polynomial_degree}")
+                                        print(current_jobs,f"{ROOT_DIR}/7_apr/{arch}/checkpoints/{arch}{loss}_{typ}_{num_classes}_{N_REPEAT_FRAME1}_{it_lim}_t{degree}_{f1}_t{polynomial_degree}")
 
                                         if current_jobs != job:
                                             continue
 
-                                        if len(glob(f'/gpfs/soma_fs/home/ortega/thesis/7_apr/{arch}/history/{arch}{loss}_{typ}_{num_classes}_{N_REPEAT_FRAME1}_{it_lim}_t{degree}_{f1}_t{polynomial_degree}.npy'))>0:
+                                        if len(glob(f'{ROOT_DIR}/7_apr/{arch}/history/{arch}{loss}_{typ}_{num_classes}_{N_REPEAT_FRAME1}_{it_lim}_t{degree}_{f1}_t{polynomial_degree}.npy'))>0:
                                             print('done')
                                             continue
                                             
@@ -139,7 +143,7 @@ if __name__ == '__main__':
                                                     loss=getattr(losses,loss))
 
                                             callbacks = [tf.keras.callbacks.ModelCheckpoint(
-                                            filepath= f"/gpfs/soma_fs/home/ortega/thesis/7_apr/{arch}/checkpoints/{arch}{loss}_{typ}_{num_classes}_{N_REPEAT_FRAME1}_{it_lim}_t{degree}_{f1}_t{polynomial_degree}",
+                                            filepath= f"{ROOT_DIR}/7_apr/{arch}/checkpoints/{arch}{loss}_{typ}_{num_classes}_{N_REPEAT_FRAME1}_{it_lim}_t{degree}_{f1}_t{polynomial_degree}",
                                             save_weights_only=True,
                                             verbose = True,
                                             save_best_only=True),
@@ -162,7 +166,7 @@ if __name__ == '__main__':
                                             
                                             if not np.isnan(history.history['val_loss'][-1]):
 
-                                                np.save(f'/gpfs/soma_fs/home/ortega/thesis/7_apr/{arch}/history/{arch}{loss}_{typ}_{num_classes}_{N_REPEAT_FRAME1}_{it_lim}_t{degree}_{f1}_t{polynomial_degree}.npy',np.array([history.history['loss'],history.history['val_loss']]))
+                                                np.save(f'{ROOT_DIR}/7_apr/{arch}/history/{arch}{loss}_{typ}_{num_classes}_{N_REPEAT_FRAME1}_{it_lim}_t{degree}_{f1}_t{polynomial_degree}.npy',np.array([history.history['loss'],history.history['val_loss']]))
                                                 break
                                             else:
                                                 tries += 1
@@ -172,12 +176,12 @@ if __name__ == '__main__':
                                     
                                     current_jobs += 1
 
-                                    print(current_jobs,f"/gpfs/soma_fs/home/ortega/thesis/7_apr/{arch}/checkpoints/{arch}{loss}_{typ}_{num_classes}_{N_REPEAT_FRAME1}_{it_lim}_t{degree}_{f1}_f")
+                                    print(current_jobs,f"{ROOT_DIR}/7_apr/{arch}/checkpoints/{arch}{loss}_{typ}_{num_classes}_{N_REPEAT_FRAME1}_{it_lim}_t{degree}_{f1}_f")
 
                                     if current_jobs != job:
                                         continue
 
-                                    if len(glob(f'/gpfs/soma_fs/home/ortega/thesis/7_apr/{arch}/history/{arch}{loss}_{typ}_{num_classes}_{N_REPEAT_FRAME1}_{it_lim}_t{degree}_{f1}_f.npy'))>0:
+                                    if len(glob(f'{ROOT_DIR}/7_apr/{arch}/history/{arch}{loss}_{typ}_{num_classes}_{N_REPEAT_FRAME1}_{it_lim}_t{degree}_{f1}_f.npy'))>0:
                                         print('done')
                                         continue
                                         
@@ -193,7 +197,7 @@ if __name__ == '__main__':
                                                 loss=getattr(losses,loss))
 
                                         callbacks = [tf.keras.callbacks.ModelCheckpoint(
-                                        filepath= f"/gpfs/soma_fs/home/ortega/thesis/7_apr/{arch}/checkpoints/{arch}{loss}_{typ}_{num_classes}_{N_REPEAT_FRAME1}_{it_lim}_t{degree}_{f1}_f",
+                                        filepath= f"{ROOT_DIR}/7_apr/{arch}/checkpoints/{arch}{loss}_{typ}_{num_classes}_{N_REPEAT_FRAME1}_{it_lim}_t{degree}_{f1}_f",
                                         save_weights_only=True,
                                         verbose = True,
                                         save_best_only=True),
@@ -216,7 +220,7 @@ if __name__ == '__main__':
                                         
                                         if not np.isnan(history.history['val_loss'][-1]):
 
-                                            np.save(f'/gpfs/soma_fs/home/ortega/thesis/7_apr/{arch}/history/{arch}{loss}_{typ}_{num_classes}_{N_REPEAT_FRAME1}_{it_lim}_t{degree}_{f1}_f.npy',np.array([history.history['loss'],history.history['val_loss']]))
+                                            np.save(f'{ROOT_DIR}/7_apr/{arch}/history/{arch}{loss}_{typ}_{num_classes}_{N_REPEAT_FRAME1}_{it_lim}_t{degree}_{f1}_f.npy',np.array([history.history['loss'],history.history['val_loss']]))
                                             break
                                         else:
                                             tries += 1

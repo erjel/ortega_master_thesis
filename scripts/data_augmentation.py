@@ -73,9 +73,8 @@ def get_data_generator(sampler):
 def get_generators(typ,var1_d,var1_u,BATCH_SIZE = 50, CROP1 = 256,
                   known_variance=True,N_REPEAT_FRAME1=1):
 
-    test = glob('../../images/test/*.jpg')
-    train = glob('../../images/train/*.jpg')
-
+    test = glob('images/test/*.jpg')
+    train = glob('images/train/*.jpg')
 
     global open_frame
     open_frame = getattr(OF,typ)
