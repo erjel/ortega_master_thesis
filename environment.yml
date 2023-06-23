@@ -1,0 +1,10 @@
+name: tracking
+channels:
+  - defaults
+dependencies:
+  - tensorflow=2.4.1=gpu_py39h8236f22_0
+  - matplotlib=3.6.2=py39h06a4308_0
+  - numpy=1.19.5=py39hc896f84_4
+  - opencv=4.6.0=py39h417a72b_3
+  - tqdm=4.65.0=py39hb070fc8_0
+  - scikit-image=0.19.3=py39h6a678d5_1
