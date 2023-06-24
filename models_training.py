@@ -46,6 +46,7 @@ class losses:
 
 if __name__ == '__main__':
     
+    from argparse import Namespace
     import os
     from pathlib import Path
 
@@ -81,6 +82,14 @@ if __name__ == '__main__':
     from data_augmentation import get_generators
     from architectures import get_model
 
+    gpus = tf.config.experimental.list_physical_devices('GPU')
+    if gpus:
+        try:
+            for gpu in gpus:
+                tf.config.experimental.set_memory_growth(gpu, True)
+        except RuntimeError as e:
+            print(e)
+
 
     CROP = 256
     image_size = (CROP,CROP)
@@ -94,139 +103,104 @@ if __name__ == '__main__':
     losses_names = ['H1','L2','W1infty','Linfty','product','psnr']
     architectures = ['splines','decreasing','flux']
 
+    options = []
+
     for N_REPEAT_FRAME1 in np.arange(2,32,2):
-
-        gen_batch_train,gen_batch_val = get_generators(typ,var1_d=0,var1_u=55,CROP1=CROP,BATCH_SIZE=30,
-                                                       N_REPEAT_FRAME1=N_REPEAT_FRAME1)
-
         for arch in architectures:
-            print(arch)
-
             for loss in losses_names:
-                print(loss)
-
-                order = 1
                 for num_classes in [5,10,15,20,25,50]:
-                    print('num_classes: ',num_classes)
-
                     for degree in np.arange(1,6):
-                        print(degree)
-                        
-                        #for f1,factor in enumerate(10.**(-np.linspace(-1,0.5,4))):
                         for f1,factor in enumerate([1]):
-                            
                             for use_polynomial in [True,False]:
-                                
-                                if use_polynomial:
-                                
-                                    for polynomial_degree in range(1,3):
-                        
-                                        current_jobs += 1
+                                for polynomial_degree in range(0,3):
+                                    use_polynomial = not polynomial_degree == 0
 
-                                        print(current_jobs,f"{ROOT_DIR}/7_apr/{arch}/checkpoints/{arch}{loss}_{typ}_{num_classes}_{N_REPEAT_FRAME1}_{it_lim}_t{degree}_{f1}_t{polynomial_degree}")
-
-                                        if current_jobs != job:
-                                            continue
-
-                                        if len(glob(f'{ROOT_DIR}/7_apr/{arch}/history/{arch}{loss}_{typ}_{num_classes}_{N_REPEAT_FRAME1}_{it_lim}_t{degree}_{f1}_t{polynomial_degree}.npy'))>0:
-                                            print('done')
-                                            continue
-                                            
-                                            
-                                        tries = 0
-                                        
-                                        while tries < 5:
-
-                                            model = get_model(arch,it_lim=it_lim,image_size=image_size,num_classes = num_classes,
-                                                              second=True,degree1=degree,factor=factor)
-                                            model.compile(optimizer=tf.keras.optimizers.Adam(1e-3),
-                                                    loss=getattr(losses,loss))
-
-                                            callbacks = [tf.keras.callbacks.ModelCheckpoint(
-                                            filepath= f"{ROOT_DIR}/7_apr/{arch}/checkpoints/{arch}{loss}_{typ}_{num_classes}_{N_REPEAT_FRAME1}_{it_lim}_t{degree}_{f1}_t{polynomial_degree}",
-                                            save_weights_only=True,
-                                            verbose = True,
-                                            save_best_only=True),
-                                            tf.keras.callbacks.ReduceLROnPlateau(factor=0.2, verbose=1,patience=5),
-                                            tf.keras.callbacks.TerminateOnNaN()
-
-                                            ]
-
-                                            history = model.fit(
-                                                gen_batch_train,
-                                                epochs=50,
-                                                steps_per_epoch=100,
-                                                validation_data=gen_batch_val,
-                                                validation_steps=10,
-                                                shuffle=False,
-                                                use_multiprocessing=True,
-                                                callbacks=callbacks,
-                                                workers=1
-                                            )
-                                            
-                                            if not np.isnan(history.history['val_loss'][-1]):
-
-                                                np.save(f'{ROOT_DIR}/7_apr/{arch}/history/{arch}{loss}_{typ}_{num_classes}_{N_REPEAT_FRAME1}_{it_lim}_t{degree}_{f1}_t{polynomial_degree}.npy',np.array([history.history['loss'],history.history['val_loss']]))
-                                                break
-                                            else:
-                                                tries += 1
-
-                                
-                                else:
-                                    
-                                    current_jobs += 1
-
-                                    print(current_jobs,f"{ROOT_DIR}/7_apr/{arch}/checkpoints/{arch}{loss}_{typ}_{num_classes}_{N_REPEAT_FRAME1}_{it_lim}_t{degree}_{f1}_f")
-
-                                    if current_jobs != job:
-                                        continue
-
-                                    if len(glob(f'{ROOT_DIR}/7_apr/{arch}/history/{arch}{loss}_{typ}_{num_classes}_{N_REPEAT_FRAME1}_{it_lim}_t{degree}_{f1}_f.npy'))>0:
-                                        print('done')
-                                        continue
-                                        
-                                    tries = 0
-                                    
-                                    while tries < 5:
-
-
-
-                                        model = get_model(arch,it_lim=it_lim,image_size=image_size,num_classes = num_classes,
-                                                          second=True,degree1=degree,factor=factor)
-                                        model.compile(optimizer=tf.keras.optimizers.Adam(1e-3),
-                                                loss=getattr(losses,loss))
-
-                                        callbacks = [tf.keras.callbacks.ModelCheckpoint(
-                                        filepath= f"{ROOT_DIR}/7_apr/{arch}/checkpoints/{arch}{loss}_{typ}_{num_classes}_{N_REPEAT_FRAME1}_{it_lim}_t{degree}_{f1}_f",
-                                        save_weights_only=True,
-                                        verbose = True,
-                                        save_best_only=True),
-                                        tf.keras.callbacks.ReduceLROnPlateau(factor=0.2, verbose=1,patience=5),
-                                        tf.keras.callbacks.TerminateOnNaN()
-
-                                        ]
-
-                                        history = model.fit(
-                                            gen_batch_train,
-                                            epochs=50,
-                                            steps_per_epoch=100,
-                                            validation_data=gen_batch_val,
-                                            validation_steps=10,
-                                            shuffle=False,
-                                            use_multiprocessing=True,
-                                            callbacks=callbacks,
-                                            workers=1
+                                    options.append(
+                                        Namespace(
+                                            N_REPEAT_FRAME1=N_REPEAT_FRAME1,
+                                            arch=arch,
+                                            loss=loss,
+                                            num_classes=num_classes,
+                                            degree=degree,
+                                            f1=f1,
+                                            factor=factor,
+                                            use_polynomial=use_polynomial,
+                                            polynomial_degree=polynomial_degree
                                         )
-                                        
-                                        if not np.isnan(history.history['val_loss'][-1]):
+                                    )
 
-                                            np.save(f'{ROOT_DIR}/7_apr/{arch}/history/{arch}{loss}_{typ}_{num_classes}_{N_REPEAT_FRAME1}_{it_lim}_t{degree}_{f1}_f.npy',np.array([history.history['loss'],history.history['val_loss']]))
-                                            break
-                                        else:
-                                            tries += 1
+    print(f'Run hyperparameter scan for {len(options)} options')
+    for option in options:
+        gen_batch_train,gen_batch_val = get_generators(typ,var1_d=0,var1_u=55,CROP1=CROP,BATCH_SIZE=30,
+                                                        N_REPEAT_FRAME1=option.N_REPEAT_FRAME1)
 
+        if option.use_polynomial:                          
+            checkpoint_dir = f"{ROOT_DIR}/7_apr/{option.arch}/checkpoints/{option.arch}{option.loss}_{typ}_{option.num_classes}_{option.N_REPEAT_FRAME1}_{it_lim}_t{option.degree}_{option.f1}_t{option.polynomial_degree}"
+        else:
+            checkpoint_dir = f"{ROOT_DIR}/7_apr/{option.arch}/checkpoints/{option.arch}{option.loss}_{typ}_{option.num_classes}_{option.N_REPEAT_FRAME1}_{it_lim}_t{option.degree}_{option.f1}_f"
+        history_file = f"{checkpoint_dir.replace('checkpoint', 'history')}.npy"
 
+        current_jobs += 1
+        print(
+            current_jobs,
+            checkpoint_dir
+        )
 
-                                
-                                
-    
+        if current_jobs != job:
+            continue
+
+        if len(
+                glob(history_file)
+            ) > 0:
+            print('done')
+            continue
+                
+        tries = 0
+        
+        while tries < 5:
+
+            model = get_model(
+                option.arch,
+                it_lim=it_lim,
+                image_size=image_size,
+                num_classes = option.num_classes,
+                second=True,
+                degree1=option.degree,
+                factor=option.factor
+            )
+            model.compile(
+                optimizer=tf.keras.optimizers.Adam(1e-3),
+                loss=getattr(losses,option.loss)
+            )
+
+            callbacks = [
+                tf.keras.callbacks.ModelCheckpoint(
+                    filepath= checkpoint_dir,
+                    save_weights_only=True,
+                    verbose = True,
+                    save_best_only=True
+                ),
+                tf.keras.callbacks.ReduceLROnPlateau(factor=0.2, verbose=1,patience=5),
+                tf.keras.callbacks.TerminateOnNaN()
+            ]
+
+            history = model.fit(
+                gen_batch_train,
+                epochs=50,
+                steps_per_epoch=100,
+                validation_data=gen_batch_val,
+                validation_steps=10,
+                shuffle=False,
+                use_multiprocessing=True,
+                callbacks=callbacks,
+                workers=1
+            )
+            
+            if not np.isnan(history.history['val_loss'][-1]):
+                np.save(
+                    history_file,
+                    np.array([history.history['loss'],history.history['val_loss']])
+                )
+                break
+            else:
+                tries += 1
